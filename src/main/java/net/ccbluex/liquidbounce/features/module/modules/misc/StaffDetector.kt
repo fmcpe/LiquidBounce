@@ -14,6 +14,7 @@ import net.ccbluex.liquidbounce.value.ListValue
 import net.minecraft.init.Items
 import net.minecraft.network.Packet
 import net.minecraft.network.play.server.*
+import sun.audio.AudioPlayer.player
 
 object StaffDetector : Module("StaffDetector", ModuleCategory.MISC, gameDetecting = false) {
 
@@ -89,9 +90,13 @@ object StaffDetector : Module("StaffDetector", ModuleCategory.MISC, gameDetectin
                     }
 
                     miscSpectatorList.forEach { player ->
-                        if (player in blocksMCStaff) {
+                        val isStaff = player in blocksMCStaff
+
+                        if (isStaff && spectator) {
                             Chat.print("§c[STAFF] §d${player} §3is using the spectator menu §e(compass/left)")
-                        } else {
+                        }
+
+                        if (!isStaff && otherSpectator) {
                             Chat.print("§d${player} §3is using the spectator menu §e(compass/left)")
                         }
                         checkedSpectator.remove(player)
@@ -113,13 +118,17 @@ object StaffDetector : Module("StaffDetector", ModuleCategory.MISC, gameDetectin
             return
         }
 
-        if (player in blocksMCStaff) {
+        val isStaff = player in blocksMCStaff
+
+        if (isStaff && spectator) {
             if (warn == "Chat") {
                 Chat.print("§c[STAFF] §d${player} §3is a spectators")
             } else {
                 hud.addNotification(Notification("§c[STAFF] §d${player} §3is a spectators", 3000F))
             }
-        } else {
+        }
+
+        if (!isStaff && otherSpectator) {
             if (warn == "Chat") {
                 Chat.print("§d${player} §3is a spectators")
             } else {
@@ -130,11 +139,9 @@ object StaffDetector : Module("StaffDetector", ModuleCategory.MISC, gameDetectin
         attemptLeave = false
         checkedSpectator.add(player)
 
-        if (player !in blocksMCStaff) {
-            return
+        if (isStaff) {
+            autoLeave()
         }
-
-        autoLeave()
     }
 
     private fun notifyStaff() {
