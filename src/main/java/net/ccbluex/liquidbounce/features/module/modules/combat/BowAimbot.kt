@@ -9,18 +9,14 @@ import net.ccbluex.liquidbounce.event.EventState
 import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.MotionEvent
 import net.ccbluex.liquidbounce.event.Render3DEvent
+import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.features.module.ModuleCategory
 import net.ccbluex.liquidbounce.utils.EntityUtils.isSelected
 import net.ccbluex.liquidbounce.utils.Rotation
-import net.ccbluex.liquidbounce.utils.RotationUtils.currentRotation
 import net.ccbluex.liquidbounce.utils.RotationUtils.faceTrajectory
 import net.ccbluex.liquidbounce.utils.RotationUtils.getRotationDifference
-import net.ccbluex.liquidbounce.utils.RotationUtils.limitAngleChange
 import net.ccbluex.liquidbounce.utils.RotationUtils.setTargetRotation
 import net.ccbluex.liquidbounce.utils.extensions.getDistanceToEntityBox
-import net.ccbluex.liquidbounce.utils.extensions.rotation
-import net.ccbluex.liquidbounce.utils.misc.RandomUtils.nextFloat
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawPlatform
 import net.ccbluex.liquidbounce.value.BoolValue
 import net.ccbluex.liquidbounce.value.FloatValue
@@ -33,7 +29,7 @@ import net.minecraft.item.ItemEnderPearl
 import net.minecraft.item.ItemSnowball
 import java.awt.Color
 
-object BowAimbot : Module("BowAimbot", ModuleCategory.COMBAT) {
+object BowAimbot : Module("BowAimbot", Category.COMBAT, hideModule = false) {
 
     private val bow by BoolValue("Bow", true, subjective = true)
     private val egg by BoolValue("Egg", true, subjective = true)
@@ -55,20 +51,31 @@ object BowAimbot : Module("BowAimbot", ModuleCategory.COMBAT) {
     private val silent by BoolValue("Silent", true)
     private val strafe by ListValue("Strafe", arrayOf("Off", "Strict", "Silent"), "Off") { silent }
     private val smootherMode by ListValue("SmootherMode", arrayOf("Linear", "Relative"), "Relative")
-    private val maxTurnSpeedValue: FloatValue = object : FloatValue("MaxTurnSpeed", 120f, 0f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minTurnSpeed)
 
-        override fun isSupported() = silent
+    private val simulateShortStop by BoolValue("SimulateShortStop", false)
+
+    private val startFirstRotationSlow by BoolValue("StartFirstRotationSlow", false)
+
+    private val maxHorizontalSpeedValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minHorizontalSpeed)
     }
-    private val maxTurnSpeed by maxTurnSpeedValue
+    private val maxHorizontalSpeed by maxHorizontalSpeedValue
 
-    private val minTurnSpeed by object : FloatValue("MinTurnSpeed", 80f, 0f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxTurnSpeed)
-
-        override fun isSupported() = !maxTurnSpeedValue.isMinimal() && silent
+    private val minHorizontalSpeed: Float by object : FloatValue("MinHorizontalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxHorizontalSpeed)
+        override fun isSupported() = !maxHorizontalSpeedValue.isMinimal()
     }
 
-    private val angleThresholdUntilReset by FloatValue("AngleThresholdUntilReset", 5f, 0.1f..180f) { silent }
+    private val maxVerticalSpeedValue = object : FloatValue("MaxVerticalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minVerticalSpeed)
+    }
+    private val maxVerticalSpeed by maxVerticalSpeedValue
+
+    private val minVerticalSpeed: Float by object : FloatValue("MinVerticalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxVerticalSpeed)
+        override fun isSupported() = !maxVerticalSpeedValue.isMinimal()
+    }
+    private val angleThresholdUntilReset by FloatValue("AngleThresholdUntilReset", 5f, 0.1f..180f)
 
     private var target: Entity? = null
 
@@ -109,31 +116,24 @@ object BowAimbot : Module("BowAimbot", ModuleCategory.COMBAT) {
             }
         }
 
-        val limitedRotation = limitAngleChange(
-            currentRotation ?: mc.thePlayer.rotation,
+        setTargetRotation(
             targetRotation ?: return,
-            nextFloat(minTurnSpeed, maxTurnSpeed),
-            smootherMode
+            strafe = silent && strafe != "Off",
+            strict = silent && strafe == "Strict",
+            applyClientSide = !silent,
+            turnSpeed = minHorizontalSpeed..maxHorizontalSpeed to minVerticalSpeed..maxVerticalSpeed,
+            angleThresholdForReset = angleThresholdUntilReset,
+            smootherMode = smootherMode,
+            simulateShortStop = simulateShortStop,
+            startOffSlow = startFirstRotationSlow
         )
-
-        if (silent) {
-            setTargetRotation(
-                limitedRotation,
-                strafe = strafe != "Off",
-                strict = strafe == "Strict",
-                resetSpeed = minTurnSpeed to maxTurnSpeed,
-                angleThresholdForReset = angleThresholdUntilReset,
-                smootherMode = this.smootherMode
-            )
-        } else {
-            limitedRotation.toPlayer(mc.thePlayer)
-        }
     }
 
     @EventTarget
     fun onRender3D(event: Render3DEvent) {
-        if (target != null && priority != "Multi" && mark)
+        if (target != null && priority != "Multi" && mark) {
             drawPlatform(target!!, Color(37, 126, 255, 70))
+        }
     }
 
     private fun getTarget(throughWalls: Boolean, priorityMode: String): Entity? {

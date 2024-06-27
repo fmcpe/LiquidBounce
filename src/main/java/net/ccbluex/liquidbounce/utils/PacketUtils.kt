@@ -7,21 +7,15 @@ package net.ccbluex.liquidbounce.utils
 
 import net.ccbluex.liquidbounce.event.*
 import net.ccbluex.liquidbounce.features.module.modules.combat.Velocity
-import net.ccbluex.liquidbounce.features.module.modules.player.FakeLag
+import net.ccbluex.liquidbounce.features.module.modules.combat.FakeLag
 import net.ccbluex.liquidbounce.injection.implementations.IMixinEntity
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.network.NetworkManager
 import net.minecraft.network.Packet
 import net.minecraft.network.play.INetHandlerPlayClient
-import net.minecraft.network.play.server.S0CPacketSpawnPlayer
-import net.minecraft.network.play.server.S0FPacketSpawnMob
-import net.minecraft.network.play.server.S0EPacketSpawnObject
-import net.minecraft.network.play.server.S12PacketEntityVelocity
-import net.minecraft.network.play.server.S14PacketEntity
-import net.minecraft.network.play.server.S18PacketEntityTeleport
+import net.minecraft.network.play.server.*
 import kotlin.math.roundToInt
 
-// TODO: Remove annotations once all modules are converted to kotlin.
 object PacketUtils : MinecraftInstance(), Listenable {
 
     val queuedPackets = mutableListOf<Packet<*>>()
@@ -41,6 +35,7 @@ object PacketUtils : MinecraftInstance(), Listenable {
             }
         }
     }
+
     @EventTarget(priority = 2)
     fun onPacket(event: PacketEvent) {
         val packet = event.packet
@@ -90,6 +85,7 @@ object PacketUtils : MinecraftInstance(), Listenable {
                 }
         }
     }
+
     @EventTarget(priority = -5)
     fun onGameLoop(event: GameLoopEvent) {
         synchronized(queuedPackets) {
@@ -103,10 +99,19 @@ object PacketUtils : MinecraftInstance(), Listenable {
             queuedPackets.clear()
         }
     }
+
+    @EventTarget(priority = -1)
+    fun onDisconnect(event: WorldEvent) {
+        if (event.worldClient == null) {
+            synchronized(queuedPackets) {
+                queuedPackets.clear()
+            }
+        }
+    }
+
     override fun handleEvents() = true
 
     @JvmStatic
-    @JvmOverloads
     fun sendPacket(packet: Packet<*>, triggerEvent: Boolean = true) {
         if (triggerEvent) {
             mc.netHandler?.addToSendQueue(packet)
@@ -114,6 +119,8 @@ object PacketUtils : MinecraftInstance(), Listenable {
         }
 
         val netManager = mc.netHandler?.networkManager ?: return
+
+        PPSCounter.registerType(PPSCounter.PacketType.SEND)
         if (netManager.isChannelOpen) {
             netManager.flushOutboundQueue()
             netManager.dispatchPacket(packet, null)
@@ -128,15 +135,17 @@ object PacketUtils : MinecraftInstance(), Listenable {
     }
 
     @JvmStatic
-    @JvmOverloads
     fun sendPackets(vararg packets: Packet<*>, triggerEvents: Boolean = true) =
         packets.forEach { sendPacket(it, triggerEvents) }
 
     fun handlePackets(vararg packets: Packet<*>) =
         packets.forEach { handlePacket(it) }
 
-    fun handlePacket(packet: Packet<*>?) =
-        runCatching { (packet as Packet<INetHandlerPlayClient>).processPacket(mc.netHandler) }
+    fun handlePacket(packet: Packet<*>?) {
+        runCatching { (packet as Packet<INetHandlerPlayClient>).processPacket(mc.netHandler) }.onSuccess {
+            PPSCounter.registerType(PPSCounter.PacketType.RECEIVED)
+        }
+    }
 
     val Packet<*>.type
         get() = when (this.javaClass.simpleName[0]) {

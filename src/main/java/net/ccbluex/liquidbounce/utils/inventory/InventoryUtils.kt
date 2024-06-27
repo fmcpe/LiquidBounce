@@ -8,6 +8,7 @@ package net.ccbluex.liquidbounce.utils.inventory
 import net.ccbluex.liquidbounce.event.*
 import net.ccbluex.liquidbounce.features.module.modules.misc.NoSlotSet
 import net.ccbluex.liquidbounce.features.module.modules.world.ChestAura
+import net.ccbluex.liquidbounce.utils.ClientUtils.LOGGER
 import net.ccbluex.liquidbounce.utils.MinecraftInstance
 import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
 import net.ccbluex.liquidbounce.utils.timing.MSTimer
@@ -127,6 +128,17 @@ object InventoryUtils : MinecraftInstance(), Listenable {
         }.maxByOrNull { inventory.getSlot(it).stack.stackSize }
     }
 
+    fun findBlockStackInHotbarGreaterThan(amount:Int): Int? {
+        val player = mc.thePlayer ?: return null
+        val inventory = player.openContainer
+
+        return (36..44).filter {
+            val stack = inventory.getSlot(it).stack ?: return@filter false
+            val block = if (stack.item is ItemBlock) (stack.item as ItemBlock).block else return@filter false
+
+            stack.item is ItemBlock && stack.stackSize > amount && block.isFullCube && block !in BLOCK_BLACKLIST && block !is BlockBush
+        }.minByOrNull { (inventory.getSlot(it).stack.item as ItemBlock).block.isFullCube }
+    }
     // Converts container slot to hotbar slot id, else returns null
     fun Int.toHotbarIndex(stacksSize: Int): Int? {
         val parsed = this - stacksSize + 9
@@ -198,9 +210,28 @@ object InventoryUtils : MinecraftInstance(), Listenable {
 
     @EventTarget
     fun onWorld(event: WorldEvent) {
-        // Prevents desync
+        val player = mc.thePlayer ?: return
+
+        val playerSlot = player.inventory.currentItem.takeIf { it != -1 } ?: return
+
+        val prevServerSlot = _serverSlot
+        val startTime = System.currentTimeMillis()
+
+        if (prevServerSlot != playerSlot) {
+            LOGGER.info("Previous Saved Slot: $prevServerSlot | Previous Slot: $playerSlot")
+
+            // Synced previous slot to match client-side slot
+            _serverSlot = playerSlot
+            mc.playerController.updateController()
+
+            val elapsedTime = System.currentTimeMillis() - startTime
+            LOGGER.info("Slot Synced (${elapsedTime}ms)")
+        } else {
+            serverSlot = 0
+        }
+
+        // Reset flags to prevent de-sync
         _serverOpenInventory = false
-        _serverSlot = 0
         serverOpenContainer = false
     }
 

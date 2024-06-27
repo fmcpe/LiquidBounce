@@ -12,6 +12,7 @@ import net.ccbluex.liquidbounce.ui.font.Fonts
 import net.ccbluex.liquidbounce.utils.render.ColorUtils
 
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawBorder
+import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawRect
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawRoundedRect2
 import net.ccbluex.liquidbounce.value.*
 import net.minecraft.client.gui.FontRenderer
@@ -56,7 +57,7 @@ class Inventory : Element(300.0, 50.0) {
         drawRoundedRect2(0F, startY, width, height, Color(0,0,0, backgroundAlpha), roundedRectRadius)
         if (borderValue) {
             drawBorder(0f, startY, width, height, 3f, borderColor.rgb)
-            drawRoundedRect2(0F, 0f, width, 1f, borderColor, roundedRectRadius)
+            drawRect(0F, 0f, width, 1f, borderColor)
         }
         // Reset color
         resetColor()
@@ -64,7 +65,7 @@ class Inventory : Element(300.0, 50.0) {
 
 
         val invDisplayName = mc.thePlayer.inventory.displayName.formattedText
-        when(title.lowercase()) {
+        when (title.lowercase()) {
             "center" -> font.drawString(invDisplayName, width / 2 - font.getStringWidth(invDisplayName) / 2F, -(font.FONT_HEIGHT).toFloat(), titleColor.rgb, false)
             "left" -> font.drawString(invDisplayName, padding, -(font.FONT_HEIGHT).toFloat(), titleColor.rgb, false)
             "right" -> font.drawString(invDisplayName, width - padding - font.getStringWidth(invDisplayName), -(font.FONT_HEIGHT).toFloat(), titleColor.rgb, false)

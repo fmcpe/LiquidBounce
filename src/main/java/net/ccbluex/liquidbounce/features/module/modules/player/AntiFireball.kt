@@ -9,16 +9,14 @@ import net.ccbluex.liquidbounce.event.EventState
 import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.MotionEvent
 import net.ccbluex.liquidbounce.event.TickEvent
+import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.features.module.ModuleCategory
 import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
 import net.ccbluex.liquidbounce.utils.RotationUtils.currentRotation
 import net.ccbluex.liquidbounce.utils.RotationUtils.isRotationFaced
-import net.ccbluex.liquidbounce.utils.RotationUtils.limitAngleChange
 import net.ccbluex.liquidbounce.utils.RotationUtils.setTargetRotation
 import net.ccbluex.liquidbounce.utils.RotationUtils.toRotation
 import net.ccbluex.liquidbounce.utils.extensions.*
-import net.ccbluex.liquidbounce.utils.misc.RandomUtils.nextFloat
 import net.ccbluex.liquidbounce.value.BoolValue
 import net.ccbluex.liquidbounce.value.FloatValue
 import net.ccbluex.liquidbounce.value.ListValue
@@ -28,7 +26,7 @@ import net.minecraft.network.play.client.C02PacketUseEntity
 import net.minecraft.network.play.client.C0APacketAnimation
 import net.minecraft.world.WorldSettings
 
-object AntiFireball : Module("AntiFireball", ModuleCategory.PLAYER) {
+object AntiFireball : Module("AntiFireball", Category.PLAYER, hideModule = false) {
     private val range by FloatValue("Range", 4.5f, 3f..8f)
     private val swing by ListValue("Swing", arrayOf("Normal", "Packet", "None"), "Normal")
 
@@ -36,14 +34,28 @@ object AntiFireball : Module("AntiFireball", ModuleCategory.PLAYER) {
     private val smootherMode by ListValue("SmootherMode", arrayOf("Linear", "Relative"), "Relative") { rotations }
     private val strafe by BoolValue("Strafe", false) { rotations }
 
-    private val maxTurnSpeedValue: FloatValue = object : FloatValue("MaxTurnSpeed", 120f, 0f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minTurnSpeed)
-    }
-    private val maxTurnSpeed by maxTurnSpeedValue
+    private val simulateShortStop by BoolValue("SimulateShortStop", false) { rotations }
+    private val startFirstRotationSlow by BoolValue("StartFirstRotationSlow", false) { rotations }
+    private val maxHorizontalSpeedValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minHorizontalSpeed)
+        override fun isSupported() = rotations
 
-    private val minTurnSpeed by object : FloatValue("MinTurnSpeed", 80f, 0f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxTurnSpeed)
-        override fun isSupported() = !maxTurnSpeedValue.isMinimal()
+    }
+    private val maxHorizontalSpeed by maxHorizontalSpeedValue
+
+    private val minHorizontalSpeed: Float by object : FloatValue("MinHorizontalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxHorizontalSpeed)
+        override fun isSupported() = !maxHorizontalSpeedValue.isMinimal() && rotations
+    }
+
+    private val maxVerticalSpeedValue = object : FloatValue("MaxVerticalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minVerticalSpeed)
+    }
+    private val maxVerticalSpeed by maxVerticalSpeedValue
+
+    private val minVerticalSpeed: Float by object : FloatValue("MinVerticalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxVerticalSpeed)
+        override fun isSupported() = !maxVerticalSpeedValue.isMinimal() && rotations
     }
 
     private val angleThresholdUntilReset by FloatValue("AngleThresholdUntilReset", 5f, 0.1f..180f) { rotations }
@@ -82,14 +94,13 @@ object AntiFireball : Module("AntiFireball", ModuleCategory.PLAYER) {
 
             if (rotations) {
                 setTargetRotation(
-                    limitAngleChange(currentRotation ?: player.rotation,
-                        toRotation(nearestPoint, true),
-                        nextFloat(minTurnSpeed, maxTurnSpeed),
-                        smootherMode
-                    ),
+                    toRotation(nearestPoint, true),
                     strafe = this.strafe,
-                    resetSpeed = minTurnSpeed to maxTurnSpeed,
-                    angleThresholdForReset = angleThresholdUntilReset
+                    turnSpeed = minHorizontalSpeed..maxHorizontalSpeed to minVerticalSpeed..maxVerticalSpeed,
+                    angleThresholdForReset = angleThresholdUntilReset,
+                    smootherMode = smootherMode,
+                    simulateShortStop = simulateShortStop,
+                    startOffSlow = startFirstRotationSlow
                 )
             }
 

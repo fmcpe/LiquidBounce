@@ -8,19 +8,20 @@ package net.ccbluex.liquidbounce.features.module.modules.render
 import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.Render3DEvent
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.features.module.ModuleCategory
+import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.modules.misc.AntiBot.isBot
 import net.ccbluex.liquidbounce.ui.font.Fonts
 import net.ccbluex.liquidbounce.utils.EntityUtils.getHealth
 import net.ccbluex.liquidbounce.utils.EntityUtils.isLookingOnEntities
 import net.ccbluex.liquidbounce.utils.EntityUtils.isSelected
+import net.ccbluex.liquidbounce.utils.RotationUtils
 import net.ccbluex.liquidbounce.utils.extensions.getPing
 import net.ccbluex.liquidbounce.utils.render.ColorUtils
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.disableGlCap
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawTexturedModalRect
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.enableGlCap
-import net.ccbluex.liquidbounce.utils.render.RenderUtils.quickDrawBorderedRectNew
-import net.ccbluex.liquidbounce.utils.render.RenderUtils.quickDrawRectNew2
+import net.ccbluex.liquidbounce.utils.render.RenderUtils.quickDrawBorderedRect
+import net.ccbluex.liquidbounce.utils.render.RenderUtils.quickDrawRect
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.resetCaps
 import net.ccbluex.liquidbounce.value.*
 import net.minecraft.client.renderer.GlStateManager.*
@@ -29,6 +30,7 @@ import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.potion.Potion
 import net.minecraft.util.ResourceLocation
+import net.minecraft.util.Vec3
 import org.lwjgl.opengl.GL11.*
 import java.awt.Color
 import java.text.DecimalFormat
@@ -37,7 +39,7 @@ import java.util.*
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
-object NameTags : Module("NameTags", ModuleCategory.RENDER) {
+object NameTags : Module("NameTags", Category.RENDER, hideModule = false) {
     private val health by BoolValue("Health", true)
         private val healthFromScoreboard by BoolValue("HealthFromScoreboard", false) { health }
         private val absorption by BoolValue("Absorption", false) { health || healthBar }
@@ -79,7 +81,9 @@ object NameTags : Module("NameTags", ModuleCategory.RENDER) {
     }
 
     private val onLook by BoolValue("OnLook", false)
-    private val maxAngleDifference by FloatValue("MaxAngleDifference", 5.0f, 5.0f..90f) { onLook }
+    private val maxAngleDifference by FloatValue("MaxAngleDifference", 90f, 5.0f..90f) { onLook }
+
+    private val thruBlocks by BoolValue("ThruBlocks", true)
 
     private var maxRenderDistanceSq = 0.0
 
@@ -89,6 +93,8 @@ object NameTags : Module("NameTags", ModuleCategory.RENDER) {
 
     @EventTarget
     fun onRender3D(event: Render3DEvent) {
+        if (mc.theWorld == null || mc.thePlayer == null) return
+
         glPushAttrib(GL_ENABLE_BIT)
         glPushMatrix()
 
@@ -106,19 +112,20 @@ object NameTags : Module("NameTags", ModuleCategory.RENDER) {
             if (entity !is EntityLivingBase) continue
             if (!isSelected(entity, false)) continue
             if (isBot(entity) && !bot) continue
+            if (onLook && !isLookingOnEntities(entity, maxAngleDifference.toDouble())) continue
+            if (!thruBlocks && !RotationUtils.isVisible(Vec3(entity.posX, entity.posY, entity.posZ))) continue
 
             val name = entity.displayName.unformattedText ?: continue
 
             val distanceSquared = mc.thePlayer.getDistanceSqToEntity(entity)
 
-            if (onLook && !isLookingOnEntities(entity, maxAngleDifference.toDouble())) {
-                continue
-            }
-
             if (distanceSquared <= maxRenderDistanceSq) {
                 renderNameTag(entity, if (clearNames) ColorUtils.stripColor(name) else name)
             }
         }
+
+        glDisable(GL_BLEND)
+        glDisable(GL_LINE_SMOOTH)
 
         glPopMatrix()
         glPopAttrib()
@@ -174,7 +181,7 @@ object NameTags : Module("NameTags", ModuleCategory.RENDER) {
         val healthColor = when {
             entity.health <= 0 -> Color(255, 0, 0)
             else -> {
-                val healthRatio = (getHealth(entity) / entity.maxHealth).coerceIn(0.0F, 1.0F)
+                val healthRatio = (getHealth(entity, healthFromScoreboard) / entity.maxHealth).coerceIn(0.0F, 1.0F)
                 val red = (255 * (1 - healthRatio)).toInt()
                 val green = (255 * healthRatio).toInt()
                 Color(red, green, 0)
@@ -206,7 +213,7 @@ object NameTags : Module("NameTags", ModuleCategory.RENDER) {
 
         val borderColor = Color(borderColorRed, borderColorGreen, borderColorBlue, borderColorAlpha)
 
-        if (border) quickDrawBorderedRectNew(
+        if (border) quickDrawBorderedRect(
             -width - 2F,
             -2F,
             width + 4F,
@@ -215,22 +222,22 @@ object NameTags : Module("NameTags", ModuleCategory.RENDER) {
             borderColor.rgb,
             bgColor.rgb
         )
-        else quickDrawRectNew2(
+        else quickDrawRect(
             -width - 2F, -2F, width + 4F, fontRenderer.FONT_HEIGHT + 2F + if (healthBar) 2F else 0F, bgColor.rgb
         )
 
         if (healthBar) {
-            quickDrawRectNew2(
+            quickDrawRect(
                 -width - 2F,
                 fontRenderer.FONT_HEIGHT + 3F,
                 -width - 2F + dist,
                 fontRenderer.FONT_HEIGHT + 4F,
                 Color(50, 50, 50).rgb
             )
-            quickDrawRectNew2(
+            quickDrawRect(
                 -width - 2F,
                 fontRenderer.FONT_HEIGHT + 3F,
-                -width - 2F + (dist * (getHealth(entity) / entity.maxHealth).coerceIn(0F, 1F)),
+                -width - 2F + (dist * (getHealth(entity, healthFromScoreboard) / entity.maxHealth).coerceIn(0F, 1F)),
                 fontRenderer.FONT_HEIGHT + 4F,
                 healthColor.rgb
             )
@@ -308,7 +315,7 @@ object NameTags : Module("NameTags", ModuleCategory.RENDER) {
 
         val result = getHealth(entity, healthFromScoreboard, absorption)
 
-        val healthPercentage = (getHealth(entity) / entity.maxHealth).coerceIn(0.0F, 1.0F)
+        val healthPercentage = (getHealth(entity, healthFromScoreboard) / entity.maxHealth).coerceIn(0.0F, 1.0F)
         val healthColor = when {
             entity.health <= 0 -> "§4"
             healthPercentage >= 0.75 -> "§a"

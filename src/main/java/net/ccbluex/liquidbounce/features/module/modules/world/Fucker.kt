@@ -6,14 +6,14 @@
 package net.ccbluex.liquidbounce.features.module.modules.world
 
 import net.ccbluex.liquidbounce.event.*
+import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.features.module.ModuleCategory
 import net.ccbluex.liquidbounce.features.module.modules.combat.KillAura
 import net.ccbluex.liquidbounce.features.module.modules.player.AutoTool
+import net.ccbluex.liquidbounce.ui.font.Fonts
 import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
 import net.ccbluex.liquidbounce.utils.RotationUtils.currentRotation
 import net.ccbluex.liquidbounce.utils.RotationUtils.faceBlock
-import net.ccbluex.liquidbounce.utils.RotationUtils.limitAngleChange
 import net.ccbluex.liquidbounce.utils.RotationUtils.performRaytrace
 import net.ccbluex.liquidbounce.utils.RotationUtils.setTargetRotation
 import net.ccbluex.liquidbounce.utils.RotationUtils.toRotation
@@ -22,8 +22,10 @@ import net.ccbluex.liquidbounce.utils.block.BlockUtils.getBlockName
 import net.ccbluex.liquidbounce.utils.block.BlockUtils.getCenterDistance
 import net.ccbluex.liquidbounce.utils.block.BlockUtils.isFullBlock
 import net.ccbluex.liquidbounce.utils.extensions.*
-import net.ccbluex.liquidbounce.utils.misc.RandomUtils.nextFloat
+import net.ccbluex.liquidbounce.utils.render.RenderUtils.disableGlCap
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawBlockBox
+import net.ccbluex.liquidbounce.utils.render.RenderUtils.enableGlCap
+import net.ccbluex.liquidbounce.utils.render.RenderUtils.resetCaps
 import net.ccbluex.liquidbounce.utils.timing.MSTimer
 import net.ccbluex.liquidbounce.value.*
 import net.minecraft.block.Block
@@ -31,11 +33,14 @@ import net.minecraft.init.Blocks.air
 import net.minecraft.network.play.client.C07PacketPlayerDigging
 import net.minecraft.network.play.client.C07PacketPlayerDigging.Action.*
 import net.minecraft.network.play.client.C0APacketAnimation
+import net.minecraft.network.play.server.S08PacketPlayerPosLook
 import net.minecraft.util.BlockPos
 import net.minecraft.util.EnumFacing
+import net.minecraft.util.Vec3
+import org.lwjgl.opengl.GL11.*
 import java.awt.Color
 
-object Fucker : Module("Fucker", ModuleCategory.WORLD) {
+object Fucker : Module("Fucker", Category.WORLD, hideModule = false) {
 
     /**
      * SETTINGS
@@ -53,30 +58,57 @@ object Fucker : Module("Fucker", ModuleCategory.WORLD) {
 
     private val switch by IntegerValue("SwitchDelay", 250, 0..1000)
     private val swing by BoolValue("Swing", true)
-    private val noHit by BoolValue("NoHit", false)
+    val noHit by BoolValue("NoHit", false)
 
     private val rotations by BoolValue("Rotations", true)
     private val strafe by ListValue("Strafe", arrayOf("Off", "Strict", "Silent"), "Off") { rotations }
     private val smootherMode by ListValue("SmootherMode", arrayOf("Linear", "Relative"), "Relative") { rotations }
-    private val maxTurnSpeedValue: FloatValue = object : FloatValue("MaxTurnSpeed", 120f, 0f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minTurnSpeed)
+
+    private val simulateShortStop by BoolValue("SimulateShortStop", false) { rotations }
+    private val startFirstRotationSlow by BoolValue("StartFirstRotationSlow", false) { rotations }
+
+    private val maxHorizontalSpeedValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minHorizontalSpeed)
         override fun isSupported() = rotations
+
+    }
+    private val maxHorizontalSpeed by maxHorizontalSpeedValue
+
+    private val minHorizontalSpeed: Float by object : FloatValue("MinHorizontalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxHorizontalSpeed)
+        override fun isSupported() = !maxHorizontalSpeedValue.isMinimal() && rotations
     }
 
-    private val maxTurnSpeed by maxTurnSpeedValue
+    private val maxVerticalSpeedValue = object : FloatValue("MaxVerticalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minVerticalSpeed)
+    }
+    private val maxVerticalSpeed by maxVerticalSpeedValue
 
-    private val minTurnSpeed by object : FloatValue("MinTurnSpeed", 80f, 0f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxTurnSpeed)
-        override fun isSupported() = !maxTurnSpeedValue.isMinimal() && rotations
+    private val minVerticalSpeed: Float by object : FloatValue("MinVerticalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxVerticalSpeed)
+        override fun isSupported() = !maxVerticalSpeedValue.isMinimal() && rotations
     }
 
     private val angleThresholdUntilReset by FloatValue("AngleThresholdUntilReset", 5f, 0.1f..180f) { rotations }
+
+    private val blockProgress by BoolValue("BlockProgress", true)
+
+    private val scale by FloatValue("Scale", 2F, 1F..6F) { blockProgress }
+    private val font by FontValue("Font", Fonts.font40) { blockProgress }
+    private val fontShadow by BoolValue("Shadow", true) { blockProgress }
+
+    private val colorRed by IntegerValue("R", 200, 0..255) { blockProgress }
+    private val colorGreen by IntegerValue("G", 100, 0..255) { blockProgress }
+    private val colorBlue by IntegerValue("B", 0, 0..255) { blockProgress }
+
+    private val ignoreOwnBed by BoolValue("IgnoreOwnBed", false)
 
     /**
      * VALUES
      */
 
-    private var pos: BlockPos? = null
+    var pos: BlockPos? = null
+    private var spawnLocation: Vec3? = null
     private var oldPos: BlockPos? = null
     private var blockHitDelay = 0
     private val switchTimer = MSTimer()
@@ -93,6 +125,20 @@ object Fucker : Module("Fucker", ModuleCategory.WORLD) {
         currentDamage = 0F
         pos = null
         areSurroundings = false
+    }
+
+    @EventTarget
+    fun onPacket(event: PacketEvent) {
+        if (mc.thePlayer == null || mc.theWorld == null)
+            return
+
+        val packet = event.packet
+
+        if (packet is S08PacketPlayerPosLook) {
+            val pos = BlockPos(packet.x, packet.y, packet.z)
+
+            spawnLocation = Vec3(pos.x.toDouble(), pos.y.toDouble(), pos.z.toDouble())
+        }
     }
 
     @EventTarget
@@ -119,6 +165,11 @@ object Fucker : Module("Fucker", ModuleCategory.WORLD) {
 
         var currentPos = pos ?: return
         var spot = faceBlock(currentPos) ?: return
+
+        // Check if it is the player's own bed
+        if (ignoreOwnBed && isBedNearSpawn(currentPos)) {
+            return
+        }
 
         if (surroundings || hypixel) {
             val eyes = player.eyes
@@ -160,22 +211,29 @@ object Fucker : Module("Fucker", ModuleCategory.WORLD) {
 
         // Face block
         if (rotations) {
-            val limitedRotation = limitAngleChange(
-                currentRotation ?: player.rotation,
-                spot.rotation,
-                nextFloat(minTurnSpeed, maxTurnSpeed),
-                smootherMode
-            )
-
             setTargetRotation(
-                limitedRotation,
+                spot.rotation,
                 strafe = strafe != "Off",
                 strict = strafe == "Strict",
-                resetSpeed = minTurnSpeed to maxTurnSpeed,
+                turnSpeed = minHorizontalSpeed..maxHorizontalSpeed to minVerticalSpeed..maxVerticalSpeed,
                 angleThresholdForReset = angleThresholdUntilReset,
-                smootherMode = this.smootherMode
+                smootherMode = smootherMode,
+                simulateShortStop = simulateShortStop,
+                startOffSlow = startFirstRotationSlow
             )
         }
+    }
+
+    /**
+     * Check if the bed at the given position is near the spawn location
+     */
+    private fun isBedNearSpawn(currentPos: BlockPos): Boolean {
+        if (getBlock(currentPos) != Block.getBlockById(block) || spawnLocation == null) {
+            return false
+        }
+
+        val spawnPos = BlockPos(spawnLocation)
+        return currentPos.distanceSqToCenter(spawnPos.x.toDouble(), spawnPos.y.toDouble(), spawnPos.z.toDouble()) < 256 // 16 * 16
     }
 
     @EventTarget
@@ -198,6 +256,11 @@ object Fucker : Module("Fucker", ModuleCategory.WORLD) {
         when {
             // Destroy block
             action == "Destroy" || areSurroundings -> {
+                // Check if it is the player's own bed
+                if (ignoreOwnBed && isBedNearSpawn(currentPos)) {
+                    return
+                }
+
                 // Auto Tool
                 if (AutoTool.handleEvents()) {
                     AutoTool.switchSlot(currentPos)
@@ -276,7 +339,58 @@ object Fucker : Module("Fucker", ModuleCategory.WORLD) {
 
     @EventTarget
     fun onRender3D(event: Render3DEvent) {
-        drawBlockBox(pos ?: return, Color.RED, true)
+        val pos = pos ?: return
+        val player = mc.thePlayer ?: return
+        val renderManager = mc.renderManager
+
+        // Check if it is the player's own bed
+        if (ignoreOwnBed && isBedNearSpawn(pos)) {
+            return
+        }
+
+        if (blockProgress) {
+            if (getBlockName(block) == "Air") return
+
+            val progress = ((currentDamage * 100).coerceIn(0f, 100f)).toInt()
+            val progressText = "%d%%".format(progress)
+
+            glPushAttrib(GL_ENABLE_BIT)
+            glPushMatrix()
+
+            // Translate to block position
+            glTranslated(
+                pos.x + 0.5 - renderManager.renderPosX,
+                pos.y + 0.5 - renderManager.renderPosY,
+                pos.z + 0.5 - renderManager.renderPosZ
+            )
+
+            glRotatef(-renderManager.playerViewY, 0F, 1F, 0F)
+            glRotatef(renderManager.playerViewX, 1F, 0F, 0F)
+
+            disableGlCap(GL_LIGHTING, GL_DEPTH_TEST)
+            enableGlCap(GL_BLEND)
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
+            val fontRenderer = font
+            val color = ((colorRed and 0xFF) shl 16) or ((colorGreen and 0xFF) shl 8) or (colorBlue and 0xFF)
+
+            // Scale
+            val scale = (player.getDistanceSq(pos) / 8F).coerceAtLeast(1.5) / 150F * scale
+            glScaled(-scale, -scale, scale)
+
+            // Draw text
+            val width = fontRenderer.getStringWidth(progressText) * 0.5f
+            fontRenderer.drawString(
+                progressText, -width, if (fontRenderer == Fonts.minecraftFont) 1F else 1.5F, color, fontShadow
+            )
+
+            resetCaps()
+            glPopMatrix()
+            glPopAttrib()
+        }
+
+        // Render block box
+        drawBlockBox(pos, Color.RED, true)
     }
 
     /**

@@ -9,7 +9,7 @@ import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.PacketEvent
 import net.ccbluex.liquidbounce.event.UpdateEvent
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.features.module.ModuleCategory
+import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.utils.timing.MSTimer
 import net.ccbluex.liquidbounce.utils.timing.TimeUtils.randomDelay
 import net.ccbluex.liquidbounce.value.BoolValue
@@ -17,7 +17,7 @@ import net.ccbluex.liquidbounce.value.IntegerValue
 import net.minecraft.network.play.client.C01PacketChatMessage
 import java.util.concurrent.LinkedBlockingQueue
 
-object AtAllProvider : Module("AtAllProvider", ModuleCategory.MISC, subjective = true, gameDetecting = false) {
+object AtAllProvider : Module("AtAllProvider", Category.MISC, subjective = true, gameDetecting = false, hideModule = false) {
 
     private val maxDelayValue: IntegerValue = object : IntegerValue("MaxDelay", 1000, 0..20000) {
         override fun onChange(oldValue: Int, newValue: Int) = newValue.coerceAtLeast(minDelay)
@@ -79,12 +79,17 @@ object AtAllProvider : Module("AtAllProvider", ModuleCategory.MISC, subjective =
             if ("@a" in message) {
                 synchronized(sendQueue) {
                     for (playerInfo in mc.netHandler.playerInfoMap) {
-                        val playerName = playerInfo.gameProfile.name
+                        val playerName = playerInfo?.gameProfile?.name
 
                         if (playerName == mc.thePlayer.name)
                             continue
 
-                        sendQueue += message.replace("@a", playerName)
+                        // Replace out illegal characters
+                        val filteredName = playerName?.replace("[^a-zA-Z0-9_]", "")?.let {
+                            message.replace("@a", it)
+                        }
+
+                        sendQueue += filteredName
                     }
                     if (retry) {
                         synchronized(retryQueue) {

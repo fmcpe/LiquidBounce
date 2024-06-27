@@ -6,24 +6,22 @@
 package net.ccbluex.liquidbounce.features.module.modules.world
 
 import net.ccbluex.liquidbounce.event.*
+import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.features.module.ModuleCategory
 import net.ccbluex.liquidbounce.features.module.modules.combat.KillAura
 import net.ccbluex.liquidbounce.features.module.modules.player.Blink
 import net.ccbluex.liquidbounce.utils.ClientUtils.displayChatMessage
 import net.ccbluex.liquidbounce.utils.EntityUtils.isSelected
 import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
-import net.ccbluex.liquidbounce.utils.RotationUtils
 import net.ccbluex.liquidbounce.utils.RotationUtils.currentRotation
 import net.ccbluex.liquidbounce.utils.RotationUtils.getVectorForRotation
-import net.ccbluex.liquidbounce.utils.RotationUtils.limitAngleChange
 import net.ccbluex.liquidbounce.utils.RotationUtils.performRayTrace
+import net.ccbluex.liquidbounce.utils.RotationUtils.performRaytrace
 import net.ccbluex.liquidbounce.utils.RotationUtils.setTargetRotation
 import net.ccbluex.liquidbounce.utils.RotationUtils.toRotation
 import net.ccbluex.liquidbounce.utils.block.BlockUtils.getBlock
 import net.ccbluex.liquidbounce.utils.extensions.*
 import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils.serverOpenContainer
-import net.ccbluex.liquidbounce.utils.misc.RandomUtils.nextFloat
 import net.ccbluex.liquidbounce.utils.misc.StringUtils.contains
 import net.ccbluex.liquidbounce.utils.realX
 import net.ccbluex.liquidbounce.utils.realY
@@ -52,7 +50,7 @@ import java.util.*
 import kotlin.math.pow
 import kotlin.math.sqrt
 
-object ChestAura : Module("ChestAura", ModuleCategory.WORLD) {
+object ChestAura : Module("ChestAura", Category.WORLD) {
 
     private val chest by BoolValue("Chest", true)
     private val enderChest by BoolValue("EnderChest", false)
@@ -89,15 +87,31 @@ object ChestAura : Module("ChestAura", ModuleCategory.WORLD) {
 
     private val rotations by BoolValue("Rotations", true)
     private val silentRotation by BoolValue("SilentRotation", true) { rotations }
-    private val maxTurnSpeedValue: FloatValue = object : FloatValue("MaxTurnSpeed", 120f, 0f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minTurnSpeed)
-        override fun isSupported() = rotations
-    }
-    private val maxTurnSpeed by maxTurnSpeedValue
 
-    private val minTurnSpeed by object : FloatValue("MinTurnSpeed", 80f, 0f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxTurnSpeed)
-        override fun isSupported() = !maxTurnSpeedValue.isMinimal() && rotations
+    // Turn Speed
+    private val simulateShortStop by BoolValue("SimulateShortStop", false) { rotations }
+    private val startFirstRotationSlow by BoolValue("StartFirstRotationSlow", false) { rotations }
+
+    private val maxHorizontalSpeedValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minHorizontalSpeed)
+        override fun isSupported() = rotations
+
+    }
+    private val maxHorizontalSpeed by maxHorizontalSpeedValue
+
+    private val minHorizontalSpeed: Float by object : FloatValue("MinHorizontalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxHorizontalSpeed)
+        override fun isSupported() = !maxHorizontalSpeedValue.isMinimal() && rotations
+    }
+
+    private val maxVerticalSpeedValue = object : FloatValue("MaxVerticalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minVerticalSpeed)
+    }
+    private val maxVerticalSpeed by maxVerticalSpeedValue
+
+    private val minVerticalSpeed: Float by object : FloatValue("MinVerticalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxVerticalSpeed)
+        override fun isSupported() = !maxVerticalSpeedValue.isMinimal() && rotations
     }
     private val strafe by ListValue("Strafe", arrayOf("Off", "Strict", "Silent"), "Off") { silentRotation && rotations }
     private val smootherMode by ListValue("SmootherMode", arrayOf("Linear", "Relative"), "Relative") { rotations }
@@ -129,21 +143,20 @@ object ChestAura : Module("ChestAura", ModuleCategory.WORLD) {
 
     @EventTarget
     fun onMotion(event: MotionEvent) {
-        if (Blink.handleEvents() || KillAura.isBlockingChestAura || event.eventState != EventState.POST || !timer.hasTimePassed(delay))
+        if (Blink.handleEvents() || KillAura.isBlockingChestAura || event.eventState != EventState.POST || !timer.hasTimePassed(
+                delay
+            ))
             return
 
         val thePlayer = mc.thePlayer ?: return
 
         // Check if there is an opponent in range
         if (mc.theWorld.loadedEntityList.any {
-            isSelected(it, true) && thePlayer.getDistanceSqToEntity(it) < minDistanceFromOpponentSq
-        }) return
+                isSelected(it, true) && thePlayer.getDistanceSqToEntity(it) < minDistanceFromOpponentSq
+            }) return
 
         if (serverOpenContainer && tileTarget != null) {
             timer.reset()
-
-            if (rotations && silentRotation)
-                RotationUtils.keepLength = RotationUtils.keepLength.coerceAtLeast(keepRotation)
 
             return
         }
@@ -153,7 +166,10 @@ object ChestAura : Module("ChestAura", ModuleCategory.WORLD) {
         val pointsInRange = mc.theWorld.tickableTileEntities
             // Check if tile entity is correct type, not already clicked, not blocked by a block and in range
             .filter {
-                shouldClickTileEntity(it) && it.getDistanceSq(thePlayer.posX, thePlayer.posY, thePlayer.posZ) <= searchRadiusSq
+                shouldClickTileEntity(it) && it.getDistanceSq(thePlayer.posX,
+                    thePlayer.posY,
+                    thePlayer.posZ
+                ) <= searchRadiusSq
             }.flatMap { entity ->
                 val box = entity.blockType.getSelectedBoundingBox(mc.theWorld, entity.pos)
 
@@ -194,39 +210,19 @@ object ChestAura : Module("ChestAura", ModuleCategory.WORLD) {
 
         tileTarget = closestClickable
 
-        var (vec, entity) = closestClickable
-
         if (rotations) {
-            val limitedRotation = limitAngleChange(
-                currentRotation ?: thePlayer.rotation,
-                toRotation(vec),
-                nextFloat(minTurnSpeed, maxTurnSpeed)
-            ).fixedSensitivity()
-
-            if (silentRotation)
-                setTargetRotation(
-                    limitedRotation,
-                    keepRotation,
-                    strafe = strafe != "Off",
-                    strict = strafe == "Strict",
-                    resetSpeed = minTurnSpeed to maxTurnSpeed,
-                    angleThresholdForReset = angleThresholdUntilReset,
-                    smootherMode
-                )
-            else limitedRotation.toPlayer(thePlayer)
-
-            vec = eyes + getVectorForRotation(limitedRotation) * range.toDouble()
-        }
-
-        performRayTrace(entity.pos, vec)?.run {
-            TickScheduler += {
-                if (thePlayer.onPlayerRightClick(blockPos, sideHit, hitVec)) {
-                    if (visualSwing) thePlayer.swingItem()
-                    else sendPacket(C0APacketAnimation())
-
-                    timer.reset()
-                }
-            }
+            setTargetRotation(
+                toRotation(closestClickable.first),
+                keepRotation,
+                silentRotation && strafe != "Off",
+                silentRotation && strafe == "Strict",
+                !silentRotation,
+                minHorizontalSpeed..maxHorizontalSpeed to minVerticalSpeed..maxVerticalSpeed,
+                angleThresholdUntilReset,
+                smootherMode,
+                simulateShortStop,
+                startFirstRotationSlow
+            )
         }
     }
 
@@ -306,7 +302,7 @@ object ChestAura : Module("ChestAura", ModuleCategory.WORLD) {
                     val actionMsg = if (packet.data2 == 1) "§a§lOpened§3" else "§c§lClosed§3"
                     val timeTakenMsg = if (packet.data2 == 0 && prevTime != null)
                         ", took §b${decimalFormat.format((System.currentTimeMillis() - prevTime) / 1000.0)} s§3"
-                        else ""
+                    else ""
                     val playerMsg = if (player == mc.thePlayer) actionMsg else "§b${player.name} §3${actionMsg.lowercase()}"
 
                     displayChatMessage("§8[§9§lChestAura§8] $playerMsg chest from §b$distance m§3$timeTakenMsg.")
@@ -336,6 +332,44 @@ object ChestAura : Module("ChestAura", ModuleCategory.WORLD) {
                         return
 
                     clickedTileEntities += entity
+                }
+            }
+        }
+    }
+
+    @EventTarget
+    fun onTick(event: TickEvent) {
+        val player = mc.thePlayer ?: return
+        val target = tileTarget ?: return
+
+        val rotationToUse = if (rotations) {
+            currentRotation ?: return
+        } else toRotation(target.first)
+
+        val distance = sqrt(target.third)
+
+        if (distance <= range) {
+            val pos = target.second.pos
+
+            val rotationVec = getVectorForRotation(rotationToUse) * mc.playerController.blockReachDistance.toDouble()
+
+            val visibleResult = performRayTrace(pos, rotationVec)
+            val invisibleResult = performRaytrace(pos, rotationToUse)
+
+            val resultToUse = if (visibleResult?.blockPos == pos) {
+                visibleResult
+            } else {
+                if (invisibleResult?.blockPos == pos) {
+                    invisibleResult
+                } else null
+            }
+
+            resultToUse?.run {
+                if (player.onPlayerRightClick(blockPos, sideHit, hitVec)) {
+                    if (visualSwing) player.swingItem()
+                    else sendPacket(C0APacketAnimation())
+
+                    timer.reset()
                 }
             }
         }

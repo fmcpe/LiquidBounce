@@ -7,7 +7,7 @@ package net.ccbluex.liquidbounce.features.module.modules.movement
 
 import net.ccbluex.liquidbounce.event.*
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.features.module.ModuleCategory
+import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.aac.*
 import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.hypixel.HypixelHop
 import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.matrix.*
@@ -20,13 +20,15 @@ import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.spec
 import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.verus.NewVerusLowHop
 import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.verus.VerusHop
 import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.verus.VerusLowHop
+import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.vulcan.VulcanGround288
 import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.vulcan.VulcanHop
+import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.vulcan.VulcanLowHop
 import net.ccbluex.liquidbounce.utils.MovementUtils.isMoving
 import net.ccbluex.liquidbounce.value.BoolValue
 import net.ccbluex.liquidbounce.value.FloatValue
 import net.ccbluex.liquidbounce.value.ListValue
 
-object Speed : Module("Speed", ModuleCategory.MOVEMENT) {
+object Speed : Module("Speed", Category.MOVEMENT, hideModule = false) {
 
     private val speedModes = arrayOf(
 
@@ -60,6 +62,8 @@ object Speed : Module("Speed", ModuleCategory.MOVEMENT) {
 
         // Vulcan
         VulcanHop,
+        VulcanLowHop,
+        VulcanGround288,
 
         // Matrix
         OldMatrixHop,
@@ -68,10 +72,7 @@ object Speed : Module("Speed", ModuleCategory.MOVEMENT) {
 
         // Server specific
         TeleportCubeCraft,
-        HiveHop,
         HypixelHop,
-        Mineplex,
-        MineplexGround,
 
         // Other
         Boost,
@@ -107,10 +108,7 @@ object Speed : Module("Speed", ModuleCategory.MOVEMENT) {
     val resetXZ by BoolValue("CustomResetXZ", false) { mode == "Custom" }
     val resetY by BoolValue("CustomResetY", false) { mode == "Custom" }
 
-    val aacPortLength by FloatValue("AAC-PortLength", 1f, 1f..20f) { mode == "AACPort" }
-    val aacGroundTimer by FloatValue("AACGround-Timer", 3f, 1.1f..10f) { mode in arrayOf("AACGround", "AACGround2") }
     val cubecraftPortLength by FloatValue("CubeCraft-PortLength", 1f, 0.1f..2f) { mode == "TeleportCubeCraft" }
-    val mineplexGroundSpeed by FloatValue("MineplexGround-Speed", 0.5f, 0.1f..1f) { mode == "MineplexGround" }
 
     @EventTarget
     fun onUpdate(event: UpdateEvent) {
@@ -160,6 +158,22 @@ object Speed : Module("Speed", ModuleCategory.MOVEMENT) {
             return
 
         modeModule.onStrafe()
+    }
+
+    @EventTarget
+    fun onJump(event: JumpEvent) {
+        if (mc.thePlayer.isSneaking)
+            return
+
+        modeModule.onJump(event)
+    }
+
+    @EventTarget
+    fun onPacket(event: PacketEvent) {
+        if (mc.thePlayer.isSneaking)
+            return
+
+        modeModule.onPacket(event)
     }
 
     override fun onEnable() {

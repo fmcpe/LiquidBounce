@@ -9,7 +9,7 @@ import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.Render3DEvent
 import net.ccbluex.liquidbounce.event.UpdateEvent
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.features.module.ModuleCategory
+import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.modules.player.AutoTool
 import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
 import net.ccbluex.liquidbounce.utils.RotationUtils.faceBlock
@@ -38,7 +38,7 @@ import net.minecraft.util.Vec3
 import java.awt.Color
 import kotlin.math.roundToInt
 
-object Nuker : Module("Nuker", ModuleCategory.WORLD, gameDetecting = false) {
+object Nuker : Module("Nuker", Category.WORLD, gameDetecting = false, hideModule = false) {
 
     /**
      * OPTIONS
@@ -49,7 +49,7 @@ object Nuker : Module("Nuker", ModuleCategory.WORLD, gameDetecting = false) {
     private val priority by ListValue("Priority", arrayOf("Distance", "Hardness"), "Distance")
 
     private val rotations by BoolValue("Rotations", true)
-        private val strafe by ListValue("Strafe", arrayOf("Off", "Strict", "Silent"), "Off") { rotations }
+    private val strafe by ListValue("Strafe", arrayOf("Off", "Strict", "Silent"), "Off") { rotations }
 
     private val layer by BoolValue("Layer", false)
     private val hitDelay by IntegerValue("HitDelay", 4, 0..20)
@@ -145,7 +145,11 @@ object Nuker : Module("Nuker", ModuleCategory.WORLD, gameDetecting = false) {
                 // Change head rotations to next block
                 if (rotations) {
                     val rotation = faceBlock(blockPos) ?: return // In case of a mistake. Prevent flag.
-                    setTargetRotation(rotation.rotation, strafe = strafe != "Off", strict = strafe == "Strict")
+                    setTargetRotation(rotation.rotation,
+                        strafe = strafe != "Off",
+                        strict = strafe == "Strict",
+                        immediate = true
+                    )
                 }
 
                 // Set next target block

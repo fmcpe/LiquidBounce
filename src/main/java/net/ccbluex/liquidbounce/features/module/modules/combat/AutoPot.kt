@@ -10,7 +10,7 @@ import net.ccbluex.liquidbounce.event.EventState.PRE
 import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.MotionEvent
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.features.module.ModuleCategory
+import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
 import net.ccbluex.liquidbounce.utils.PacketUtils.sendPackets
 import net.ccbluex.liquidbounce.utils.Rotation
@@ -33,13 +33,21 @@ import net.minecraft.network.play.client.C08PacketPlayerBlockPlacement
 import net.minecraft.network.play.client.C09PacketHeldItemChange
 import net.minecraft.potion.Potion
 
-object AutoPot : Module("AutoPot", ModuleCategory.COMBAT) {
+object AutoPot : Module("AutoPot", Category.COMBAT, hideModule = false) {
 
-    private val health by FloatValue("Health", 15F, 1F..20F)
+    private val health by FloatValue("Health", 15F, 1F..20F) { healPotion || regenerationPotion }
     private val delay by IntegerValue("Delay", 500, 500..1000)
 
+    // Useful potion options
+    private val healPotion by BoolValue("HealPotion", true)
+    private val regenerationPotion by BoolValue("RegenPotion", true)
+    private val fireResistancePotion by BoolValue("FireResPotion", true)
+    private val strengthPotion by BoolValue("StrengthPotion", true)
+    private val jumpPotion by BoolValue("JumpPotion", true)
+    private val speedPotion by BoolValue("SpeedPotion", true)
+
     private val openInventory by BoolValue("OpenInv", false)
-        private val simulateInventory by BoolValue("SimulateInventory", true) { !openInventory }
+    private val simulateInventory by BoolValue("SimulateInventory", true) { !openInventory }
 
     private val groundDistance by FloatValue("GroundDistance", 2F, 0F..5F)
     private val mode by ListValue("Mode", arrayOf("Normal", "Jump", "Port"), "Normal")
@@ -59,7 +67,7 @@ object AutoPot : Module("AutoPot", ModuleCategory.COMBAT) {
                 // Hotbar Potion
                 val potionInHotbar = findPotion(36, 45)
 
-                if (potionInHotbar != null && thePlayer.health <= health) {
+                if (potionInHotbar != null) {
                     if (thePlayer.onGround) {
                         when (mode.lowercase()) {
                             "jump" -> thePlayer.tryJump()
@@ -79,7 +87,9 @@ object AutoPot : Module("AutoPot", ModuleCategory.COMBAT) {
                     sendPacket(C09PacketHeldItemChange(potion - 36))
 
                     if (thePlayer.rotationPitch <= 80F) {
-                        setTargetRotation(Rotation(thePlayer.rotationYaw, nextFloat(80F, 90F)).fixedSensitivity())
+                        setTargetRotation(Rotation(thePlayer.rotationYaw, nextFloat(80F, 90F)).fixedSensitivity(),
+                            immediate = true
+                        )
                     }
                     return
                 }
@@ -101,6 +111,7 @@ object AutoPot : Module("AutoPot", ModuleCategory.COMBAT) {
                     msTimer.reset()
                 }
             }
+
             POST -> {
                 if (potion >= 0 && serverRotation.pitch >= 75F) {
                     val itemStack = thePlayer.inventoryContainer.getSlot(potion).stack
@@ -132,12 +143,32 @@ object AutoPot : Module("AutoPot", ModuleCategory.COMBAT) {
             val itemPotion = stack.item as ItemPotion
 
             for (potionEffect in itemPotion.getEffects(stack))
-                if (potionEffect.potionID == Potion.heal.id)
+                if (thePlayer.health <= health && healPotion && potionEffect.potionID == Potion.heal.id)
                     return i
 
             if (!thePlayer.isPotionActive(Potion.regeneration))
                 for (potionEffect in itemPotion.getEffects(stack))
-                    if (potionEffect.potionID == Potion.regeneration.id)
+                    if (thePlayer.health <= health && regenerationPotion && potionEffect.potionID == Potion.regeneration.id)
+                        return i
+
+            if (!thePlayer.isPotionActive(Potion.fireResistance))
+                for (potionEffect in itemPotion.getEffects(stack))
+                    if (fireResistancePotion && potionEffect.potionID == Potion.fireResistance.id)
+                        return i
+
+            if (!thePlayer.isPotionActive(Potion.moveSpeed))
+                for (potionEffect in itemPotion.getEffects(stack))
+                    if (speedPotion && potionEffect.potionID == Potion.moveSpeed.id)
+                        return i
+
+            if (!thePlayer.isPotionActive(Potion.jump))
+                for (potionEffect in itemPotion.getEffects(stack))
+                    if (jumpPotion && potionEffect.potionID == Potion.jump.id)
+                        return i
+
+            if (!thePlayer.isPotionActive(Potion.damageBoost))
+                for (potionEffect in itemPotion.getEffects(stack))
+                    if (strengthPotion && potionEffect.potionID == Potion.damageBoost.id)
                         return i
         }
 

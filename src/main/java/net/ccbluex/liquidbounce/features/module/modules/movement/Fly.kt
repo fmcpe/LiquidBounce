@@ -7,21 +7,24 @@ package net.ccbluex.liquidbounce.features.module.modules.movement
 
 import net.ccbluex.liquidbounce.event.*
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.features.module.ModuleCategory
+import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.aac.*
+import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.blocksmc.BlocksMC
+import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.blocksmc.BlocksMC2
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.hypixel.BoostHypixel
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.hypixel.FreeHypixel
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.hypixel.Hypixel
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.ncp.NCP
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.ncp.OldNCP
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.other.*
-import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.rewinside.Rewinside
-import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.rewinside.TeleportRewinside
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.spartan.BugSpartan
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.spartan.Spartan
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.spartan.Spartan2
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.vanilla.SmoothVanilla
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.vanilla.Vanilla
+import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.vulcan.Vulcan
+import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.vulcan.VulcanGhost
+import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.vulcan.VulcanOld
 import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
 import net.ccbluex.liquidbounce.utils.extensions.stop
 import net.ccbluex.liquidbounce.utils.extensions.stopXZ
@@ -36,7 +39,7 @@ import net.minecraft.util.AxisAlignedBB
 import org.lwjgl.input.Keyboard
 import java.awt.Color
 
-object Fly : Module("Fly", ModuleCategory.MOVEMENT, Keyboard.KEY_F) {
+object Fly : Module("Fly", Category.MOVEMENT, Keyboard.KEY_F, hideModule = false) {
     private val flyModes = arrayOf(
         Vanilla, SmoothVanilla,
 
@@ -52,17 +55,17 @@ object Fly : Module("Fly", ModuleCategory.MOVEMENT, Keyboard.KEY_F) {
         // Hypixel
         Hypixel, BoostHypixel, FreeHypixel,
 
-        // Rewinside
-        Rewinside, TeleportRewinside,
-
         // Other server specific flys
-        Mineplex, NeruxVace, Minesucht, Redesky, BlocksMC,
+        NeruxVace, Minesucht, BlocksMC, BlocksMC2,
 
         // Spartan
         Spartan, Spartan2, BugSpartan,
 
+        // Vulcan
+        Vulcan, VulcanOld, VulcanGhost,
+
         // Other anti-cheats
-        MineSecure, HawkEye, HAC, WatchCat, Verus, Vulcan, VulcanOld,
+        MineSecure, HawkEye, HAC, WatchCat, Verus,
 
         // Other
         Jetpack, KeepAlive, Collide, Jump, Flag
@@ -92,9 +95,7 @@ object Fly : Module("Fly", ModuleCategory.MOVEMENT, Keyboard.KEY_F) {
         { mode == "Hypixel" && hypixelBoost }
 
     // Other
-    val mineplexSpeed by FloatValue("MineplexSpeed", 1f, 0.5f..10f) { mode == "Mineplex" }
     val neruxVaceTicks by IntegerValue("NeruxVace-Ticks", 6, 2..20) { mode == "NeruxVace" }
-    val redeskyHeight by FloatValue("Redesky-Height", 4f, 1f..7f) { mode == "Redesky" }
 
     // Verus
     val damage by BoolValue("Damage", false) { mode == "Verus" }
@@ -104,12 +105,13 @@ object Fly : Module("Fly", ModuleCategory.MOVEMENT, Keyboard.KEY_F) {
     val yBoost by FloatValue("YBoost", 0.42f, 0f..10f) { mode == "Verus" }
 
     // BlocksMC
-    val timerSlowed by BoolValue("TimerSlowed", true) { mode == "BlocksMC" }
-    val boostSpeed by FloatValue("BoostSpeed", 8f, 1f..15f) { mode == "BlocksMC" }
-    val extraBoost by FloatValue("ExtraSpeed", 0.25f, 0.0F..2f) { mode == "BlocksMC" }
-    val stopOnLanding by BoolValue("StopOnLanding", true) { mode == "BlocksMC" }
-    val stopOnNoMove by BoolValue("StopOnNoMove", true) { mode == "BlocksMC" }
-    val debugFly by BoolValue("Debug", false) { mode == "BlocksMC" }
+    val stable by BoolValue("Stable", false) { mode == "BlocksMC" || mode == "BlocksMC2" }
+    val timerSlowed by BoolValue("TimerSlowed", true) { mode == "BlocksMC" || mode == "BlocksMC2" }
+    val boostSpeed by FloatValue("BoostSpeed", 6f, 1f..15f) { mode == "BlocksMC" || mode == "BlocksMC2" }
+    val extraBoost by FloatValue("ExtraSpeed", 1f, 0.0F..2f) { mode == "BlocksMC" || mode == "BlocksMC2" }
+    val stopOnLanding by BoolValue("StopOnLanding", true) { mode == "BlocksMC" || mode == "BlocksMC2" }
+    val stopOnNoMove by BoolValue("StopOnNoMove", false) { mode == "BlocksMC" || mode == "BlocksMC2" }
+    val debugFly by BoolValue("Debug", false) { mode == "BlocksMC" || mode == "BlocksMC2" }
 
     // Visuals
     private val mark by BoolValue("Mark", true, subjective = true)

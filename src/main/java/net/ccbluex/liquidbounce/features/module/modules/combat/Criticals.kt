@@ -9,7 +9,7 @@ import net.ccbluex.liquidbounce.event.AttackEvent
 import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.PacketEvent
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.features.module.ModuleCategory
+import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.modules.movement.Fly
 import net.ccbluex.liquidbounce.utils.PacketUtils.sendPackets
 import net.ccbluex.liquidbounce.utils.extensions.component1
@@ -24,7 +24,7 @@ import net.minecraft.entity.EntityLivingBase
 import net.minecraft.network.play.client.C03PacketPlayer
 import net.minecraft.network.play.client.C03PacketPlayer.C04PacketPlayerPosition
 
-object Criticals : Module("Criticals", ModuleCategory.COMBAT) {
+object Criticals : Module("Criticals", Category.COMBAT, hideModule = false) {
 
     val mode by ListValue(
         "Mode",
@@ -83,10 +83,9 @@ object Criticals : Module("Criticals", ModuleCategory.COMBAT) {
                 }
 
                 "blocksmc2" -> {
-                    if (thePlayer.ticksExisted % 5 == 0) {
+                    if (thePlayer.ticksExisted % 4 == 0) {
                         sendPackets(
-                            C04PacketPlayerPosition(x, y + 0.001, z, false),
-                            C04PacketPlayerPosition(x, y + 0.0010353, z, false),
+                            C04PacketPlayerPosition(x, y + 0.0011, z, true),
                             C04PacketPlayerPosition(x, y, z, false)
                         )
                     }

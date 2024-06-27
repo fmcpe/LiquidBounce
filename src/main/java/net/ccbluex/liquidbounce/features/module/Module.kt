@@ -24,19 +24,20 @@ import net.minecraft.client.audio.PositionedSoundRecord
 import net.minecraft.util.ResourceLocation
 import org.lwjgl.input.Keyboard
 
-// TODO: Remove @JvmOverloads when all modules are ported to kotlin.
-open class Module @JvmOverloads constructor(
+open class Module constructor(
 
     val name: String,
-    val category: ModuleCategory,
+    val category: Category,
     defaultKeyBind: Int = Keyboard.KEY_NONE,
     val defaultInArray: Boolean = true, // Used in HideCommand to reset modules visibility.
     private val canBeEnabled: Boolean = true,
     private val forcedDescription: String? = null,
+
     // Adds spaces between lowercase and uppercase letters (KillAura -> Kill Aura)
     val spacedName: String = name.split("(?<=[a-z])(?=[A-Z])".toRegex()).joinToString(separator = " "),
-    val subjective: Boolean = category == ModuleCategory.RENDER,
-    val gameDetecting: Boolean = canBeEnabled
+    val subjective: Boolean = category == Category.RENDER,
+    val gameDetecting: Boolean = canBeEnabled,
+    val hideModule: Boolean = false
 
 ) : MinecraftInstance(), Listenable {
 
@@ -56,6 +57,19 @@ open class Module @JvmOverloads constructor(
 
             saveConfig(modulesConfig)
         }
+
+    val hideModuleValue: BoolValue = object : BoolValue("Hide", false, subjective = true) {
+        override fun onUpdate(value: Boolean) {
+            inArray = !value
+        }
+    }
+
+    // Use for synchronizing
+    val hideModuleValues: BoolValue = object : BoolValue("HideSync", hideModuleValue.get(), subjective = true) {
+        override fun onUpdate(value: Boolean) {
+            hideModuleValue.set(value)
+        }
+    }
 
     var inArray = defaultInArray
         set(value) {
@@ -155,6 +169,9 @@ open class Module @JvmOverloads constructor(
             .also {
                 if (gameDetecting)
                     it.add(onlyInGameValue)
+
+                if (!hideModule)
+                    it.add(hideModuleValue)
             }
             .distinctBy { it.name }
 

@@ -5,26 +5,30 @@
  */
 package net.ccbluex.liquidbounce.ui.client.hud.element.elements
 
-import net.ccbluex.liquidbounce.LiquidBounce.clientCommit
-import net.ccbluex.liquidbounce.LiquidBounce.CLIENT_CREATOR
+import net.ccbluex.liquidbounce.LiquidBounce.CLIENT_AUTHOR
 import net.ccbluex.liquidbounce.LiquidBounce.CLIENT_NAME
+import net.ccbluex.liquidbounce.LiquidBounce.clientCommit
 import net.ccbluex.liquidbounce.LiquidBounce.clientVersionText
+import net.ccbluex.liquidbounce.features.module.modules.combat.KillAura.blockStatus
 import net.ccbluex.liquidbounce.ui.client.hud.designer.GuiHudDesigner
 import net.ccbluex.liquidbounce.ui.client.hud.element.Border
 import net.ccbluex.liquidbounce.ui.client.hud.element.Element
 import net.ccbluex.liquidbounce.ui.client.hud.element.ElementInfo
 import net.ccbluex.liquidbounce.ui.client.hud.element.Side
 import net.ccbluex.liquidbounce.ui.font.Fonts
-import net.ccbluex.liquidbounce.utils.CPSCounter
+import net.ccbluex.liquidbounce.utils.*
 import net.ccbluex.liquidbounce.utils.MovementUtils.speed
-import net.ccbluex.liquidbounce.utils.ServerUtils
-import net.ccbluex.liquidbounce.utils.TimerBalanceUtils
 import net.ccbluex.liquidbounce.utils.extensions.getPing
+import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils.serverSlot
 import net.ccbluex.liquidbounce.utils.render.ColorUtils
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawRoundedRect2
+import net.ccbluex.liquidbounce.utils.render.shader.shaders.GradientFontShader
 import net.ccbluex.liquidbounce.utils.render.shader.shaders.RainbowFontShader
 import net.ccbluex.liquidbounce.value.*
 import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.inventory.GuiContainer
+import net.minecraft.client.gui.inventory.GuiInventory
+import net.minecraft.item.ItemSword
 import org.lwjgl.input.Keyboard
 import java.awt.Color
 import java.text.DecimalFormat
@@ -63,19 +67,41 @@ class Text(x: Double = 10.0, y: Double = 10.0, scale: Float = 1F, side: Side = S
     private var displayString by TextValue("DisplayText", "")
     private val roundedRectRadius by FloatValue("Rounded-Radius", 3F, 0F..5F)
 
-    private val rainbow by BoolValue("Rainbow", false)
-        private val rainbowX by FloatValue("Rainbow-X", -1000F, -2000F..2000F) { rainbow }
-        private val rainbowY by FloatValue("Rainbow-Y", -1000F, -2000F..2000F) { rainbow }
+    private val textColorMode by ListValue("Text-Color", arrayOf("Custom", "Random", "Rainbow", "Gradient"), "Custom")
 
-        private var alpha by IntegerValue("Alpha", 255, 0..255) { !rainbow }
-            private var red by IntegerValue("Red", 255, 0..255) { !rainbow && alpha > 0 }
-            private var green by IntegerValue("Green", 255, 0..255) { !rainbow && alpha > 0 }
-            private var blue by IntegerValue("Blue", 255, 0..255) { !rainbow && alpha > 0 }
+    private var alpha by IntegerValue("Alpha", 255, 0..255) { textColorMode != "Rainbow" }
+    private var red by IntegerValue("Red", 255, 0..255) { textColorMode == "Custom" && alpha > 0 }
+    private var green by IntegerValue("Green", 255, 0..255) { textColorMode == "Custom" && alpha > 0 }
+    private var blue by IntegerValue("Blue", 255, 0..255) { textColorMode == "Custom" && alpha > 0 }
 
     private val backgroundAlpha by IntegerValue("BackgroundAlpha", 0, 0..255)
-        private val backgroundRed by IntegerValue("BackgroundRed", 0, 0..255) { backgroundAlpha > 0 }
-        private val backgroundGreen by IntegerValue("BackgroundGreen", 0, 0..255) { backgroundAlpha > 0 }
-        private val backgroundBlue by IntegerValue("BackgroundBlue", 0, 0..255) { backgroundAlpha > 0 }
+    private val backgroundRed by IntegerValue("BackgroundRed", 0, 0..255) { backgroundAlpha > 0 }
+    private val backgroundGreen by IntegerValue("BackgroundGreen", 0, 0..255) { backgroundAlpha > 0 }
+    private val backgroundBlue by IntegerValue("BackgroundBlue", 0, 0..255) { backgroundAlpha > 0 }
+
+    private val gradientTextSpeed by FloatValue("Text-Gradient-Speed", 1f, 0.5f..10f) { textColorMode == "Gradient" }
+
+    // TODO: Make Color picker to fix this mess :/
+    private val gradientTextRed1 by FloatValue("Text-Gradient-R1", 255f, 0f..255f) { textColorMode == "Gradient" }
+    private val gradientTextGreen1 by FloatValue("Text-Gradient-G1", 0f, 0f..255f) { textColorMode == "Gradient" }
+    private val gradientTextBlue1 by FloatValue("Text-Gradient-B1", 0f, 0f..255f) { textColorMode == "Gradient" }
+
+    private val gradientTextRed2 by FloatValue("Text-Gradient-R2", 0f, 0f..255f) { textColorMode == "Gradient" }
+    private val gradientTextGreen2 by FloatValue("Text-Gradient-G2", 255f, 0f..255f) { textColorMode == "Gradient" }
+    private val gradientTextBlue2 by FloatValue("Text-Gradient-B2", 0f, 0f..255f) { textColorMode == "Gradient" }
+
+    private val gradientTextRed3 by FloatValue("Text-Gradient-R3", 0f, 0f..255f) { textColorMode == "Gradient" }
+    private val gradientTextGreen3 by FloatValue("Text-Gradient-G3", 0f, 0f..255f) { textColorMode == "Gradient" }
+    private val gradientTextBlue3 by FloatValue("Text-Gradient-B3", 255f, 0f..255f) { textColorMode == "Gradient" }
+
+    private val gradientTextRed4 by FloatValue("Text-Gradient-R4", 0f, 0f..255f) { textColorMode == "Gradient" }
+    private val gradientTextGreen4 by FloatValue("Text-Gradient-G4", 0f, 0f..255f) { textColorMode == "Gradient" }
+    private val gradientTextBlue4 by FloatValue("Text-Gradient-B4", 0f, 0f..255f) { textColorMode == "Gradient" }
+
+    private val rainbowX by FloatValue("Rainbow-X", -1000F, -2000F..2000F) { textColorMode == "Rainbow" }
+    private val rainbowY by FloatValue("Rainbow-Y", -1000F, -2000F..2000F) { textColorMode == "Rainbow" }
+    private val gradientX by FloatValue("Gradient-X", -500F, -2000F..2000F) { textColorMode == "Gradient" }
+    private val gradientY by FloatValue("Gradient-Y", -1500F, -2000F..2000F) { textColorMode == "Gradient" }
 
     private var shadow by BoolValue("Shadow", true)
     private val font by FontValue("Font", Fonts.font40)
@@ -128,6 +154,13 @@ class Text(x: Double = 10.0, y: Double = 10.0, scale: Float = 1F, side: Side = S
                 "food" -> return thePlayer.foodStats.foodLevel
                 "onground" -> return thePlayer.onGround
                 "tbalance", "timerbalance" -> return "${TimerBalanceUtils.getBalance()}ms"
+                "block", "blocking" -> return (thePlayer.heldItem?.item is ItemSword && (blockStatus || thePlayer.isUsingItem || thePlayer.isBlocking))
+                "sneak", "sneaking" -> return (thePlayer.isSneaking || mc.gameSettings.keyBindSneak.isKeyDown)
+                "sprint", "sprinting" -> return (thePlayer.serverSprintState || thePlayer.isSprinting || mc.gameSettings.keyBindSprint.isKeyDown)
+                "inventory", "inv" -> return mc.currentScreen is GuiInventory || mc.currentScreen is GuiContainer
+                "serverslot" -> return serverSlot
+                "clientslot" -> return thePlayer.inventory?.currentItem
+                "bps", "blockpersecond" -> return DECIMAL_FORMAT.format(BPSUtils.getBPS())
             }
         }
 
@@ -136,7 +169,7 @@ class Text(x: Double = 10.0, y: Double = 10.0, scale: Float = 1F, side: Side = S
             "clientname" -> CLIENT_NAME
             "clientversion" -> clientVersionText
             "clientcommit" -> clientCommit
-            "clientcreator" -> CLIENT_CREATOR
+            "clientauthor", "clientcreator" -> CLIENT_AUTHOR
             "fps" -> Minecraft.getDebugFPS()
             "date" -> DATE_FORMAT.format(System.currentTimeMillis())
             "time" -> HOUR_FORMAT.format(System.currentTimeMillis())
@@ -144,6 +177,8 @@ class Text(x: Double = 10.0, y: Double = 10.0, scale: Float = 1F, side: Side = S
             "cps", "lcps" -> return CPSCounter.getCPS(CPSCounter.MouseButton.LEFT)
             "mcps" -> return CPSCounter.getCPS(CPSCounter.MouseButton.MIDDLE)
             "rcps" -> return CPSCounter.getCPS(CPSCounter.MouseButton.RIGHT)
+            "pps_sent" -> return PPSCounter.getPPS(PPSCounter.PacketType.SEND)
+            "pps_received" -> return PPSCounter.getPPS(PPSCounter.PacketType.RECEIVED)
             else -> null // Null = don't replace
         }
     }
@@ -182,17 +217,71 @@ class Text(x: Double = 10.0, y: Double = 10.0, scale: Float = 1F, side: Side = S
      * Draw element
      */
     override fun drawElement(): Border {
-        val rainbow = rainbow
+        val rainbow = textColorMode == "Rainbow"
+        val gradient = textColorMode == "Gradient"
 
-        if (backgroundAlpha > 0) drawRoundedRect2(-2F, -2F, font.getStringWidth(displayText) + 2F, font.FONT_HEIGHT + 0F, Color(backgroundRed, backgroundGreen, backgroundBlue, backgroundAlpha), roundedRectRadius)
+        if (backgroundAlpha > 0) drawRoundedRect2(
+            -2F,
+            -2F,
+            font.getStringWidth(displayText) + 2F,
+            font.FONT_HEIGHT + 0F,
+            Color(backgroundRed, backgroundGreen, backgroundBlue, backgroundAlpha),
+            roundedRectRadius
+        )
 
-        RainbowFontShader.begin(rainbow, if (rainbowX == 0f) 0f else 1f / rainbowX, if (rainbowY == 0f) 0f else 1f / rainbowY, System.currentTimeMillis() % 10000 / 10000F).use {
-            font.drawString(displayText, 0F, 0F, if (rainbow)
-                0 else color.rgb, shadow)
+        val gradientOffset = System.currentTimeMillis() % 10000 / 10000F
+        val gradientX = if (gradientX == 0f) 0f else 1f / gradientX
+        val gradientY = if (gradientY == 0f) 0f else 1f / gradientY
 
-            if (editMode && mc.currentScreen is GuiHudDesigner && editTicks <= 40)
-                font.drawString("_", font.getStringWidth(displayText) + 2F,
-                        0F, if (rainbow) ColorUtils.rainbow(400000000L).rgb else color.rgb, shadow)
+        GradientFontShader.begin(
+            textColorMode == "Gradient",
+            gradientX,
+            gradientY,
+            floatArrayOf(
+                gradientTextRed1 / 255.0f,
+                gradientTextGreen1 / 255.0f,
+                gradientTextBlue1 / 255.0f,
+                1.0f
+            ),
+            floatArrayOf(
+                gradientTextRed2 / 255.0f,
+                gradientTextGreen2 / 255.0f,
+                gradientTextBlue2 / 255.0f,
+                1.0f
+            ),
+            floatArrayOf(
+                gradientTextRed3 / 255.0f,
+                gradientTextGreen3 / 255.0f,
+                gradientTextBlue3 / 255.0f,
+                1.0f
+            ),
+            floatArrayOf(
+                gradientTextRed4 / 255.0f,
+                gradientTextGreen4 / 255.0f,
+                gradientTextBlue4 / 255.0f,
+                1.0f
+            ),
+            gradientTextSpeed,
+            gradientOffset
+        ).use {
+            RainbowFontShader.begin(
+                rainbow,
+                if (rainbowX == 0f) 0f else 1f / rainbowX,
+                if (rainbowY == 0f) 0f else 1f / rainbowY,
+                System.currentTimeMillis() % 10000 / 10000F
+            ).use {
+                font.drawString(
+                    displayText, 0F, 0F, if (rainbow)
+                        0 else if (gradient) 0 else color.rgb, shadow
+                )
+
+                if (editMode && mc.currentScreen is GuiHudDesigner && editTicks <= 40) {
+                    font.drawString(
+                        "_", font.getStringWidth(displayText) + 2F,
+                        0F, if (rainbow) ColorUtils.rainbow(400000000L).rgb else if (gradient) 0 else color.rgb, shadow
+                    )
+                }
+            }
         }
 
         if (editMode && mc.currentScreen !is GuiHudDesigner) {
