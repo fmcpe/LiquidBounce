@@ -5,10 +5,9 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.combat
 
-import net.ccbluex.liquidbounce.event.EventState
 import net.ccbluex.liquidbounce.event.EventTarget
-import net.ccbluex.liquidbounce.event.MotionEvent
 import net.ccbluex.liquidbounce.event.Render3DEvent
+import net.ccbluex.liquidbounce.event.RotationUpdateEvent
 import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.utils.EntityUtils.isSelected
@@ -54,7 +53,10 @@ object BowAimbot : Module("BowAimbot", Category.COMBAT, hideModule = false) {
 
     private val simulateShortStop by BoolValue("SimulateShortStop", false)
 
-    private val startFirstRotationSlow by BoolValue("StartFirstRotationSlow", false)
+    private val startRotatingSlow by BoolValue("StartRotatingSlow", false)
+
+    private val slowDownOnDirectionChange by BoolValue("SlowDownOnDirectionChange", false)
+    private val useStraightLinePath by BoolValue("UseStraightLinePath", true)
 
     private val maxHorizontalSpeedValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
         override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minHorizontalSpeed)
@@ -84,11 +86,9 @@ object BowAimbot : Module("BowAimbot", Category.COMBAT, hideModule = false) {
     }
 
     @EventTarget
-    fun onMotion(event: MotionEvent) {
-        if (event.eventState != EventState.POST)
-            return
-
+    fun onRotationUpdate(event: RotationUpdateEvent) {
         target = null
+
         var targetRotation: Rotation? = null
 
         when (val item = mc.thePlayer.heldItem?.item) {
@@ -125,7 +125,9 @@ object BowAimbot : Module("BowAimbot", Category.COMBAT, hideModule = false) {
             angleThresholdForReset = angleThresholdUntilReset,
             smootherMode = smootherMode,
             simulateShortStop = simulateShortStop,
-            startOffSlow = startFirstRotationSlow
+            startOffSlow = startRotatingSlow,
+            slowDownOnDirChange = slowDownOnDirectionChange,
+            useStraightLinePath = useStraightLinePath,
         )
     }
 

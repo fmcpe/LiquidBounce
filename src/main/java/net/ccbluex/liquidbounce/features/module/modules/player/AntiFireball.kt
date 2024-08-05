@@ -5,10 +5,9 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.player
 
-import net.ccbluex.liquidbounce.event.EventState
 import net.ccbluex.liquidbounce.event.EventTarget
-import net.ccbluex.liquidbounce.event.MotionEvent
-import net.ccbluex.liquidbounce.event.TickEvent
+import net.ccbluex.liquidbounce.event.GameTickEvent
+import net.ccbluex.liquidbounce.event.RotationUpdateEvent
 import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
@@ -19,6 +18,7 @@ import net.ccbluex.liquidbounce.utils.RotationUtils.toRotation
 import net.ccbluex.liquidbounce.utils.extensions.*
 import net.ccbluex.liquidbounce.value.BoolValue
 import net.ccbluex.liquidbounce.value.FloatValue
+import net.ccbluex.liquidbounce.value.IntegerValue
 import net.ccbluex.liquidbounce.value.ListValue
 import net.minecraft.entity.Entity
 import net.minecraft.entity.projectile.EntityFireball
@@ -35,7 +35,9 @@ object AntiFireball : Module("AntiFireball", Category.PLAYER, hideModule = false
     private val strafe by BoolValue("Strafe", false) { rotations }
 
     private val simulateShortStop by BoolValue("SimulateShortStop", false) { rotations }
-    private val startFirstRotationSlow by BoolValue("StartFirstRotationSlow", false) { rotations }
+    private val startRotatingSlow by BoolValue("StartRotatingSlow", false) { rotations }
+    private val slowDownOnDirectionChange by BoolValue("SlowDownOnDirectionChange", false) { rotations }
+    private val useStraightLinePath by BoolValue("UseStraightLinePath", true) { rotations }
     private val maxHorizontalSpeedValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
         override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minHorizontalSpeed)
         override fun isSupported() = rotations
@@ -60,18 +62,19 @@ object AntiFireball : Module("AntiFireball", Category.PLAYER, hideModule = false
 
     private val angleThresholdUntilReset by FloatValue("AngleThresholdUntilReset", 5f, 0.1f..180f) { rotations }
 
+    private val fireballTickCheck by BoolValue("FireballTickCheck", true)
+    private val minFireballTick by IntegerValue("MinFireballTick", 10, 1..20) { fireballTickCheck }
+
     private var target: Entity? = null
 
     @EventTarget
-    private fun onMotion(event: MotionEvent) {
+    fun onRotationUpdate(event: RotationUpdateEvent) {
         val player = mc.thePlayer ?: return
-
-        if (event.eventState != EventState.POST)
-            return
+        val world = mc.theWorld ?: return
 
         target = null
 
-        for (entity in mc.theWorld.loadedEntityList.filterIsInstance<EntityFireball>()
+        for (entity in world.loadedEntityList.filterIsInstance<EntityFireball>()
             .sortedBy { player.getDistanceToBox(it.hitBox) }) {
             val nearestPoint = getNearestPointBB(player.eyes, entity.hitBox)
 
@@ -92,6 +95,11 @@ object AntiFireball : Module("AntiFireball", Category.PLAYER, hideModule = false
                 continue
             }
 
+            // Skip if the fireball entity tick exist is lower than minFireballTick
+            if (fireballTickCheck && entity.ticksExisted <= minFireballTick) {
+                continue
+            }
+
             if (rotations) {
                 setTargetRotation(
                     toRotation(nearestPoint, true),
@@ -100,7 +108,9 @@ object AntiFireball : Module("AntiFireball", Category.PLAYER, hideModule = false
                     angleThresholdForReset = angleThresholdUntilReset,
                     smootherMode = smootherMode,
                     simulateShortStop = simulateShortStop,
-                    startOffSlow = startFirstRotationSlow
+                    startOffSlow = startRotatingSlow,
+                    slowDownOnDirChange = slowDownOnDirectionChange,
+                    useStraightLinePath = useStraightLinePath
                 )
             }
 
@@ -110,7 +120,7 @@ object AntiFireball : Module("AntiFireball", Category.PLAYER, hideModule = false
     }
 
     @EventTarget
-    fun onTick(event: TickEvent) {
+    fun onTick(event: GameTickEvent) {
         val player = mc.thePlayer ?: return
         val entity = target ?: return
 

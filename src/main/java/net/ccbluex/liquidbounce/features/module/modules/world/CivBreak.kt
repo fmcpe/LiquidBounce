@@ -38,8 +38,9 @@ object CivBreak : Module("CivBreak", Category.WORLD) {
     private val smootherMode by ListValue("SmootherMode", arrayOf("Linear", "Relative"), "Relative") { rotations }
 
     private val simulateShortStop by BoolValue("SimulateShortStop", false) { rotations }
-    private val startFirstRotationSlow by BoolValue("StartFirstRotationSlow", false) { rotations }
-
+    private val startRotatingSlow by BoolValue("StartRotatingSlow", false) { rotations }
+    private val slowDownOnDirectionChange by BoolValue("SlowDownOnDirectionChange", false) { rotations }
+    private val useStraightLinePath by BoolValue("UseStraightLinePath", true) { rotations }
     private val maxHorizontalSpeedValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
         override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minHorizontalSpeed)
         override fun isSupported() = rotations
@@ -84,11 +85,7 @@ object CivBreak : Module("CivBreak", Category.WORLD) {
     }
 
     @EventTarget
-    fun onMotion(event: MotionEvent) {
-        if (event.eventState != EventState.POST) {
-            return
-        }
-
+    fun onRotationUpdate(event: RotationUpdateEvent) {
         val pos = blockPos ?: return
         val isAirBlock = getBlock(pos) == air
 
@@ -108,13 +105,15 @@ object CivBreak : Module("CivBreak", Category.WORLD) {
                 angleThresholdForReset = angleThresholdUntilReset,
                 smootherMode = smootherMode,
                 simulateShortStop = simulateShortStop,
-                startOffSlow = startFirstRotationSlow
+                startOffSlow = startRotatingSlow,
+                slowDownOnDirChange = slowDownOnDirectionChange,
+                useStraightLinePath = useStraightLinePath
             )
         }
     }
 
     @EventTarget
-    fun onTick(event: TickEvent) {
+    fun onTick(event: GameTickEvent) {
         blockPos ?: return
         enumFacing ?: return
 

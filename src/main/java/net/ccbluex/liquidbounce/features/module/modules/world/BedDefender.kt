@@ -58,8 +58,9 @@ object BedDefender : Module("BedDefender", Category.WORLD, hideModule = false) {
     }
 
     private val simulateShortStop by BoolValue("SimulateShortStop", false) { rotations }
-    private val startFirstRotationSlow by BoolValue("StartFirstRotationSlow", false) { rotations }
-
+    private val startRotatingSlow by BoolValue("StartRotatingSlow", false) { rotations }
+    private val slowDownOnDirectionChange by BoolValue("SlowDownOnDirectionChange", false) { rotations }
+    private val useStraightLinePath by BoolValue("UseStraightLinePath", true) { rotations }
     private val maxHorizontalSpeedValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
         override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minHorizontalSpeed)
         override fun isSupported() = rotations
@@ -114,6 +115,7 @@ object BedDefender : Module("BedDefender", Category.WORLD, hideModule = false) {
         }
     }
 
+    // TODO: Proper event to update.
     @EventTarget
     fun onUpdate(event: UpdateEvent) {
         val player = mc.thePlayer ?: return
@@ -171,7 +173,9 @@ object BedDefender : Module("BedDefender", Category.WORLD, hideModule = false) {
                     angleThresholdForReset = angleThresholdUntilReset,
                     smootherMode = smootherMode,
                     simulateShortStop = simulateShortStop,
-                    startOffSlow = startFirstRotationSlow
+                    startOffSlow = startRotatingSlow,
+                    slowDownOnDirChange = slowDownOnDirectionChange,
+                    useStraightLinePath = useStraightLinePath
                 )
             }
 

@@ -50,10 +50,10 @@ object LocalSettingsCommand : Command("localsettings", "localsetting", "localcon
                 return@withContext
             }
 
-            val settingsFile = File(settingsDir, args[2])
+            val settingsFile = File(settingsDir, args[2] + ".txt")
 
             if (!settingsFile.exists()) {
-                chat("§cSettings file does not exist!")
+                chat("§cSettings file does not exist! §e(Ensure its .txt)")
                 return@withContext
             }
 
@@ -78,7 +78,7 @@ object LocalSettingsCommand : Command("localsettings", "localsetting", "localcon
                 return@withContext
             }
 
-            val settingsFile = File(settingsDir, args[2])
+            val settingsFile = File(settingsDir, args[2] + ".txt")
 
             try {
                 if (settingsFile.exists())
@@ -137,7 +137,7 @@ object LocalSettingsCommand : Command("localsettings", "localsetting", "localcon
             val settings = settingsDir.listFiles() ?: return@withContext
 
             for (file in settings) {
-                chat("> " + file.name)
+                chat("> " + file.name.removeSuffix(".txt"))
             }
         }
     }
@@ -162,16 +162,9 @@ object LocalSettingsCommand : Command("localsettings", "localsetting", "localcon
 
             2 -> {
                 when (args[0].lowercase()) {
-                    "delete", "load" -> {
+                    "delete", "load", "save" -> {
                         val settings = settingsDir.listFiles() ?: return emptyList()
-                        settings.map { it.name }.filter { it.startsWith(args[1], true) }
-                    }
-                    "save" -> {
-                        if (args.getOrNull(1)?.isNotBlank() == true) {
-                            return emptyList()
-                        } else {
-                            emptyList()
-                        }
+                        settings.map { it.name.removeSuffix(".txt") }.filter { it.startsWith(args[1], true) }
                     }
                     else -> emptyList()
                 }

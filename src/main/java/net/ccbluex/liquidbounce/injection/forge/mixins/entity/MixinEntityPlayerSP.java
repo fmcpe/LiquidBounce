@@ -132,7 +132,7 @@ public abstract class MixinEntityPlayerSP extends MixinAbstractClientPlayer {
         final boolean fakeSprint = inventoryMove.handleEvents() && inventoryMove.getAacAdditionPro()
                 || AntiHunger.INSTANCE.handleEvents()
                 || sneak.handleEvents() && (!MovementUtils.INSTANCE.isMoving() || !sneak.getStopMove()) && sneak.getMode().equals("MineSecure")
-                || Disabler.INSTANCE.handleEvents() && Disabler.INSTANCE.getMode().equals("StartSprint");
+                || Disabler.INSTANCE.handleEvents() && Disabler.INSTANCE.getStartSprint();
 
         boolean sprinting = isSprinting() && !fakeSprint;
 
@@ -180,6 +180,7 @@ public abstract class MixinEntityPlayerSP extends MixinAbstractClientPlayer {
             boolean moved = xDiff * xDiff + yDiff * yDiff + zDiff * zDiff > 9.0E-4 || positionUpdateTicks >= 20;
             boolean rotated = yawDiff != 0 || pitchDiff != 0;
 
+            RotationUtils.INSTANCE.setSecondLastRotation(RotationUtils.INSTANCE.getLastServerRotation());
             RotationUtils.INSTANCE.setLastServerRotation(new Rotation(lastReportedYaw, lastReportedPitch));
 
             if (ridingEntity == null) {
@@ -213,6 +214,8 @@ public abstract class MixinEntityPlayerSP extends MixinAbstractClientPlayer {
         }
 
         EventManager.INSTANCE.callEvent(new MotionEvent(EventState.POST));
+
+        EventManager.INSTANCE.callEvent(new RotationUpdateEvent());
 
         ci.cancel();
     }
@@ -751,5 +754,22 @@ public abstract class MixinEntityPlayerSP extends MixinAbstractClientPlayer {
 
             worldObj.theProfiler.endSection();
         }
+    }
+
+    @Inject(method = "onUpdate", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/entity/AbstractClientPlayer;onUpdate()V", shift = At.Shift.BEFORE, ordinal = 0), cancellable = true)
+    private void preTickEvent(CallbackInfo ci) {
+        final PlayerTickEvent tickEvent = new PlayerTickEvent(EventState.PRE);
+        EventManager.INSTANCE.callEvent(tickEvent);
+
+        if (tickEvent.isCancelled()) {
+            EventManager.INSTANCE.callEvent(new RotationUpdateEvent());
+            ci.cancel();
+        }
+    }
+
+    @Inject(method = "onUpdate", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/entity/AbstractClientPlayer;onUpdate()V", shift = At.Shift.AFTER, ordinal = 0))
+    private void postTickEvent(CallbackInfo ci) {
+        final PlayerTickEvent tickEvent = new PlayerTickEvent(EventState.POST);
+        EventManager.INSTANCE.callEvent(tickEvent);
     }
 }

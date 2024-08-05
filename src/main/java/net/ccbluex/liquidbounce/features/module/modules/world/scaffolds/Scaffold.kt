@@ -3,24 +3,19 @@
  * A free open source mixin-based injection hacked client for Minecraft using Minecraft Forge.
  * https://github.com/CCBlueX/LiquidBounce/
  */
-package net.ccbluex.liquidbounce.features.module.modules.world
+package net.ccbluex.liquidbounce.features.module.modules.world.scaffolds
 
 import net.ccbluex.liquidbounce.event.*
 import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.features.module.modules.movement.Fly
-import net.ccbluex.liquidbounce.features.module.modules.movement.Speed
 import net.ccbluex.liquidbounce.utils.*
 import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
-import net.ccbluex.liquidbounce.utils.PacketUtils.sendPackets
-import net.ccbluex.liquidbounce.utils.RotationUtils.faceBlock
 import net.ccbluex.liquidbounce.utils.RotationUtils.getRotationDifference
 import net.ccbluex.liquidbounce.utils.RotationUtils.getVectorForRotation
 import net.ccbluex.liquidbounce.utils.RotationUtils.setTargetRotation
 import net.ccbluex.liquidbounce.utils.RotationUtils.toRotation
 import net.ccbluex.liquidbounce.utils.block.BlockUtils
 import net.ccbluex.liquidbounce.utils.block.BlockUtils.canBeClicked
-import net.ccbluex.liquidbounce.utils.block.BlockUtils.getBlock
 import net.ccbluex.liquidbounce.utils.block.BlockUtils.isReplaceable
 import net.ccbluex.liquidbounce.utils.block.PlaceInfo
 import net.ccbluex.liquidbounce.utils.extensions.*
@@ -28,20 +23,20 @@ import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils
 import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils.serverSlot
 import net.ccbluex.liquidbounce.utils.misc.RandomUtils
 import net.ccbluex.liquidbounce.utils.render.RenderUtils
-import net.ccbluex.liquidbounce.utils.timing.*
+import net.ccbluex.liquidbounce.utils.timing.DelayTimer
+import net.ccbluex.liquidbounce.utils.timing.MSTimer
+import net.ccbluex.liquidbounce.utils.timing.TickDelayTimer
+import net.ccbluex.liquidbounce.utils.timing.TimeUtils
 import net.ccbluex.liquidbounce.value.BoolValue
 import net.ccbluex.liquidbounce.value.FloatValue
 import net.ccbluex.liquidbounce.value.IntegerValue
 import net.ccbluex.liquidbounce.value.ListValue
 import net.minecraft.block.BlockBush
 import net.minecraft.client.settings.GameSettings
-import net.minecraft.init.Blocks.air
 import net.minecraft.item.ItemBlock
 import net.minecraft.item.ItemStack
-import net.minecraft.network.play.client.C03PacketPlayer.C04PacketPlayerPosition
 import net.minecraft.network.play.client.C0APacketAnimation
 import net.minecraft.network.play.client.C0BPacketEntityAction
-import net.minecraft.stats.StatList
 import net.minecraft.util.*
 import net.minecraft.world.WorldSettings
 import net.minecraftforge.event.ForgeEventFactory
@@ -51,66 +46,31 @@ import java.awt.Color
 import javax.vecmath.Color3f
 import kotlin.math.*
 
+@Suppress("unused")
 object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule = false) {
 
     /**
      * TOWER MODES & SETTINGS
      */
 
-    // TODO: (Scaffold & Tower) Optimize & Improve Code
-
     // -->
 
-    val towerMode by ListValue(
-        "TowerMode",
-        arrayOf(
-            "None",
-            "Jump",
-            "MotionJump",
-            "Motion",
-            "ConstantMotion",
-            "MotionTP",
-            "Packet",
-            "Teleport",
-            "AAC3.3.9",
-            "AAC3.6.4",
-            "Pulldown"
-        ),
-        "None"
-    )
-
-    private val stopWhenBlockAbove by BoolValue("StopWhenBlockAbove", false) { towerMode != "None" }
-
-    private val onJump by BoolValue("TowerOnJump", true) { towerMode != "None" }
-    private val matrix by BoolValue("TowerMatrix", false) { towerMode != "None" }
-    private val placeMode by ListValue(
-        "TowerPlaceTiming",
-        arrayOf("Pre", "Post"),
-        "Post"
-    ) { towerMode != "Packet" && towerMode != "None" }
-
-    // Jump mode
-    private val jumpMotion by FloatValue("JumpMotion", 0.42f, 0.3681289f..0.79f) { towerMode == "MotionJump" }
-    private val jumpDelay by IntegerValue("JumpDelay", 0, 0..20) { towerMode == "MotionJump" || towerMode == "Jump" }
-
-    // ConstantMotion
-    private val constantMotion by FloatValue("ConstantMotion", 0.42f, 0.1f..1f) { towerMode == "ConstantMotion" }
-    private val constantMotionJumpGround by FloatValue(
-        "ConstantMotionJumpGround",
-        0.79f,
-        0.76f..1f
-    ) { towerMode == "ConstantMotion" }
-    private val constantMotionJumpPacket by BoolValue("JumpPacket", true) { towerMode == "ConstantMotion" }
-
-    // Pulldown
-    private val triggerMotion by FloatValue("TriggerMotion", 0.1f, 0.0f..0.2f) { towerMode == "Pulldown" }
-    private val dragMotion by FloatValue("DragMotion", 1.0f, 0.1f..1.0f) { towerMode == "Pulldown" }
-
-    // Teleport
-    private val teleportHeight by FloatValue("TeleportHeight", 1.15f, 0.1f..5f) { towerMode == "Teleport" }
-    private val teleportDelay by IntegerValue("TeleportDelay", 0, 0..20) { towerMode == "Teleport" }
-    private val teleportGround by BoolValue("TeleportGround", true) { towerMode == "Teleport" }
-    private val teleportNoMotion by BoolValue("TeleportNoMotion", false) { towerMode == "Teleport" }
+    private val towerMode by Tower.towerModeValues
+    private val stopWhenBlockAbove by Tower.stopWhenBlockAboveValues
+    private val onJump by Tower.onJumpValues
+    private val matrix by Tower.matrixValues
+    private val placeMode by Tower.placeModeValues
+    private val jumpMotion by Tower.jumpMotionValues
+    private val jumpDelay by Tower.jumpDelayValues
+    private val constantMotion by Tower.constantMotionValues
+    private val constantMotionJumpGround by Tower.constantMotionJumpGroundValues
+    private val constantMotionJumpPacket by Tower.constantMotionJumpPacketValues
+    private val triggerMotion by Tower.triggerMotionValues
+    private val dragMotion by Tower.dragMotionValues
+    private val teleportHeight by Tower.teleportHeightValues
+    private val teleportDelay by Tower.teleportDelayValues
+    private val teleportGround by Tower.teleportGroundValues
+    private val teleportNoMotion by Tower.teleportNoMotionValues
 
     // <--
 
@@ -120,7 +80,7 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
 
     // -->
 
-    private val scaffoldMode by ListValue(
+    val scaffoldMode by ListValue(
         "ScaffoldMode",
         arrayOf("Normal", "Rewinside", "Expand", "Telly", "GodBridge"),
         "Normal"
@@ -166,11 +126,15 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
 
     // Autoblock
     private val autoBlock by ListValue("AutoBlock", arrayOf("Off", "Pick", "Spoof", "Switch"), "Spoof")
-    private val sortByHighestAmount by BoolValue("SortByHighestAmount", false, subjective = true) { autoBlock != "Off" }
-    private val earlySwitch by BoolValue("EarlySwitch", false, subjective = true) { autoBlock != "Off" && !sortByHighestAmount }
-    private val amountBeforeSwitch by IntegerValue("SlotAmountBeforeSwitch", 3, 1..10){ earlySwitch && !sortByHighestAmount }
+    private val sortByHighestAmount by BoolValue("SortByHighestAmount", false) { autoBlock != "Off" }
+    private val earlySwitch by BoolValue("EarlySwitch", false) { autoBlock != "Off" && !sortByHighestAmount }
+    private val amountBeforeSwitch by IntegerValue("SlotAmountBeforeSwitch",
+        3,
+        1..10
+    ) { earlySwitch && !sortByHighestAmount }
+
     // Settings
-    private val autoF5 by BoolValue("AutoF5", false)
+    private val autoF5 by BoolValue("AutoF5", false, subjective = true)
 
     // Basic stuff
     val sprint by BoolValue("Sprint", false)
@@ -185,13 +149,22 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
     // GodBridge mode subvalues
     private val waitForRots by BoolValue("WaitForRotations", false) { scaffoldMode == "GodBridge" }
     private val useStaticRotation by BoolValue("UseStaticRotation", false) { scaffoldMode == "GodBridge" }
-    private val customGodPitch by FloatValue("GodBridgePitch", 73.5f, 0f..90f) { scaffoldMode == "GodBridge" && useStaticRotation }
+    private val customGodPitch by FloatValue("GodBridgePitch",
+        73.5f,
+        0f..90f
+    ) { scaffoldMode == "GodBridge" && useStaticRotation }
 
-    private val minGodPitch by FloatValue("MinGodBridgePitch", 75f, 0f..90f) { scaffoldMode == "GodBridge" && !useStaticRotation }
-    private val maxGodPitch by FloatValue("MaxGodBridgePitch", 80f, 0f..90f) { scaffoldMode == "GodBridge" && !useStaticRotation }
+    private val minGodPitch by FloatValue("MinGodBridgePitch",
+        75f,
+        0f..90f
+    ) { scaffoldMode == "GodBridge" && !useStaticRotation }
+    private val maxGodPitch by FloatValue("MaxGodBridgePitch",
+        80f,
+        0f..90f
+    ) { scaffoldMode == "GodBridge" && !useStaticRotation }
 
-    private val autoJump by BoolValue("AutoJump", true) { scaffoldMode == "GodBridge" }
-    private val jumpAutomatically by BoolValue("JumpAutomatically", true) { scaffoldMode == "GodBridge" && autoJump }
+    val autoJump by BoolValue("AutoJump", true) { scaffoldMode == "GodBridge" }
+    val jumpAutomatically by BoolValue("JumpAutomatically", true) { scaffoldMode == "GodBridge" && autoJump }
     private val maxBlocksToJump: IntegerValue = object : IntegerValue("MaxBlocksToJump", 4, 1..8) {
         override fun isSupported() = scaffoldMode == "GodBridge" && !jumpAutomatically && autoJump
         override fun onChange(oldValue: Int, newValue: Int) = newValue.coerceAtLeast(minBlocksToJump.get())
@@ -259,15 +232,15 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
 
     // Rotation Options
     private val rotationMode by ListValue("Rotations", arrayOf("Off", "Normal", "Stabilized", "GodBridge"), "Normal")
-    private val smootherMode by ListValue(
+    val smootherMode by ListValue(
         "SmootherMode",
         arrayOf("Linear", "Relative"),
         "Relative"
     ) { rotationMode != "Off" }
-    private val silentRotation by BoolValue("SilentRotation", true) { rotationMode != "Off" }
-    private val simulateShortStop by BoolValue("SimulateShortStop", false) { rotationMode != "Off" }
-    private val strafe by BoolValue("Strafe", false) { rotationMode != "Off" && silentRotation }
-    private val keepRotation by BoolValue("KeepRotation", true) { rotationMode != "Off" && silentRotation }
+    val silentRotation by BoolValue("SilentRotation", true) { rotationMode != "Off" }
+    val simulateShortStop by BoolValue("SimulateShortStop", false) { rotationMode != "Off" }
+    val strafe by BoolValue("Strafe", false) { rotationMode != "Off" && silentRotation }
+    val keepRotation by BoolValue("KeepRotation", true) { rotationMode != "Off" && silentRotation }
     private val keepTicks by object : IntegerValue("KeepTicks", 1, 1..20) {
         override fun onChange(oldValue: Int, newValue: Int) = newValue.coerceAtLeast(minimum)
         override fun isSupported() = rotationMode != "Off" && scaffoldMode != "Telly" && silentRotation
@@ -278,24 +251,26 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
     private val minDist by FloatValue("MinDist", 0f, 0f..0.2f) { scaffoldMode !in arrayOf("GodBridge", "Telly") }
 
     // Turn Speed
-    private val startFirstRotationSlow by BoolValue("StartFirstRotationSlow", false) { rotationMode != "Off" }
-    private val maxHorizontalSpeedValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
+    val startRotatingSlow by BoolValue("StartRotatingSlow", false) { rotationMode != "Off" }
+    val slowDownOnDirectionChange by BoolValue("SlowDownOnDirectionChange", false) { rotationMode != "Off" }
+    val useStraightLinePath by BoolValue("UseStraightLinePath", true) { rotationMode != "Off" }
+    val maxHorizontalSpeedValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
         override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minHorizontalSpeed)
         override fun isSupported() = rotationMode != "Off"
     }
-    private val maxHorizontalSpeed by maxHorizontalSpeedValue
+    val maxHorizontalSpeed by maxHorizontalSpeedValue
 
-    private val minHorizontalSpeed: Float by object : FloatValue("MinHorizontalSpeed", 180f, 1f..180f) {
+    val minHorizontalSpeed: Float by object : FloatValue("MinHorizontalSpeed", 180f, 1f..180f) {
         override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxHorizontalSpeed)
         override fun isSupported() = !maxHorizontalSpeedValue.isMinimal() && rotationMode != "Off"
     }
 
-    private val maxVerticalSpeedValue = object : FloatValue("MaxVerticalSpeed", 180f, 1f..180f) {
+    val maxVerticalSpeedValue = object : FloatValue("MaxVerticalSpeed", 180f, 1f..180f) {
         override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minVerticalSpeed)
     }
-    private val maxVerticalSpeed by maxVerticalSpeedValue
+    val maxVerticalSpeed by maxVerticalSpeedValue
 
-    private val minVerticalSpeed: Float by object : FloatValue("MinVerticalSpeed", 180f, 1f..180f) {
+    val minVerticalSpeed: Float by object : FloatValue("MinVerticalSpeed", 180f, 1f..180f) {
         override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxVerticalSpeed)
         override fun isSupported() = !maxVerticalSpeedValue.isMinimal() && rotationMode != "Off"
     }
@@ -326,7 +301,7 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
     private val useSneakMidAir by BoolValue("UseSneakMidAir", false) { zitterMode == "Smooth" }
 
     // Game
-    private val timer by FloatValue("Timer", 1f, 0.1f..10f)
+    val timer by FloatValue("Timer", 1f, 0.1f..10f)
     private val speedModifier by FloatValue("SpeedModifier", 1f, 0f..2f)
     private val speedLimiter by BoolValue("SpeedLimiter", false) { !slow }
     private val speedLimit by FloatValue("SpeedLimit", 0.11f, 0.01f..0.12f) { !slow && speedLimiter }
@@ -352,7 +327,7 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
     // Launch position
     private var launchY = 0
 
-    private val shouldJumpOnInput = !jumpOnUserInput || !mc.gameSettings.keyBindJump.pressed
+    val shouldJumpOnInput = !jumpOnUserInput || !mc.gameSettings.keyBindJump.pressed
 
     private val shouldKeepLaunchPosition
         get() = sameY && shouldJumpOnInput && scaffoldMode != "GodBridge"
@@ -433,20 +408,6 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
         blocksUntilAxisChange = 0
     }
 
-    /**
-     * TOWER SETTINGS
-     */
-
-    // Target block
-    var placeInfo: PlaceInfo? = null
-
-    // Rotation lock
-    private var lockRotation: Rotation? = null
-
-    // Mode stuff
-    private val tickTimer = TickTimer()
-    private var jumpGround = 0.0
-
     // Events
     @EventTarget
     fun onUpdate(event: UpdateEvent) {
@@ -460,12 +421,9 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
 
         if (scaffoldMode == "GodBridge" && waitForRots) {
             if (this.placeRotation != null) {
-                if (getRotationDifference(currRotation, this.placeRotation!!.rotation) > 0.07) {
-                    mc.gameSettings.keyBindSneak.pressed = true
-                }else{
-                    mc.gameSettings.keyBindSneak.pressed = false
-                }
-
+                mc.gameSettings.keyBindSneak.pressed = getRotationDifference(currRotation,
+                    this.placeRotation!!.rotation.fixedSensitivity()
+                ) == 0f
             }
         }
         // Telly
@@ -564,284 +522,38 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
     }
 
     @EventTarget
-    fun onMotion(event: MotionEvent) {
+    fun onRotationUpdate(event: RotationUpdateEvent) {
         val rotation = RotationUtils.currentRotation
 
-        if (event.eventState == EventState.POST) {
-            update()
+        update()
 
-            if (rotationMode != "Off" && rotation != null) {
-                val placeRotation = this.placeRotation?.rotation ?: rotation
+        if (rotationMode != "Off" && rotation != null) {
+            val placeRotation = this.placeRotation?.rotation ?: rotation
 
-                val pitch = if (scaffoldMode == "GodBridge" && useStaticRotation) {
-                    if (placeRotation == this.placeRotation?.rotation) {
-                        if (isLookingDiagonally) 75.6f else customGodPitch
-                    } else placeRotation.pitch
-                } else {
-                    placeRotation.pitch
-                }
+            val pitch = if (scaffoldMode == "GodBridge" && useStaticRotation) {
+                if (placeRotation == this.placeRotation?.rotation) {
+                    if (isLookingDiagonally) 75.6f else customGodPitch
+                } else placeRotation.pitch
+            } else {
+                placeRotation.pitch
+            }
 
-                val targetRotation = Rotation(placeRotation.yaw, pitch).fixedSensitivity()
+            val targetRotation = Rotation(placeRotation.yaw, pitch).fixedSensitivity()
 
-                val ticks = if (keepRotation) {
-                    if (scaffoldMode == "Telly") 1 else keepTicks
-                } else {
-                    RotationUtils.resetTicks
-                }
+            val ticks = if (keepRotation) {
+                if (scaffoldMode == "Telly") 1 else keepTicks
+            } else {
+                RotationUtils.resetTicks
+            }
 
-                if (RotationUtils.resetTicks != 0 || keepRotation) {
-                    setRotation(targetRotation, ticks)
-                }
+            if (RotationUtils.resetTicks != 0 || keepRotation) {
+                setRotation(targetRotation, ticks)
             }
         }
-
-        /**
-         * TOWER FUNCTION
-         */
-        if (towerMode == "None") return
-        if (onJump && !mc.gameSettings.keyBindJump.isKeyDown) return
-
-        // Lock Rotation
-        if (keepRotation && lockRotation != null) {
-            setTargetRotation(
-                lockRotation!!.fixedSensitivity(),
-                strafe = strafe,
-                turnSpeed = minHorizontalSpeed..maxHorizontalSpeed to minVerticalSpeed..maxVerticalSpeed,
-                smootherMode = smootherMode,
-                simulateShortStop = simulateShortStop,
-                startOffSlow = startFirstRotationSlow
-            )
-        }
-
-        mc.timer.timerSpeed = timer
-        val eventState = event.eventState
-
-        // Force use of POST event when Packet mode is selected, it doesn't work with PRE mode
-        if (eventState.stateName == (if (towerMode == "Packet") "POST" else placeMode.uppercase()))
-            placeInfo?.let { place(it) }
-
-        if (eventState == EventState.PRE) {
-            lockRotation = null
-            placeInfo = null
-            tickTimer.update()
-
-            if (!stopWhenBlockAbove || getBlock(BlockPos(mc.thePlayer).up(2)) == air) move()
-
-            val blockPos = BlockPos(mc.thePlayer).down()
-            if (blockPos.getBlock() == air) {
-                if (search(blockPos)) {
-                    val vecRotation = faceBlock(blockPos)
-                    if (vecRotation != null) {
-                        setTargetRotation(vecRotation.rotation, startOffSlow = startFirstRotationSlow)
-                        placeInfo!!.vec3 = vecRotation.vec
-                    }
-                }
-            }
-        }
-    }
-
-    // TOWER FUNCTION
-    //Send jump packets, bypasses Hypixel.
-    private fun fakeJump() {
-        mc.thePlayer.isAirBorne = true
-        mc.thePlayer.triggerAchievement(StatList.jumpStat)
-    }
-
-    /**
-     *
-     * TOWER FUNCTION
-     *
-     * Move player
-     */
-    private fun move() {
-        val thePlayer = mc.thePlayer ?: return
-
-        if (blocksAmount <= 0)
-            return
-
-        when (towerMode.lowercase()) {
-            "jump" -> if (thePlayer.onGround && tickTimer.hasTimePassed(jumpDelay)) {
-                fakeJump()
-                thePlayer.tryJump()
-            } else if (!thePlayer.onGround) {
-                thePlayer.isAirBorne = false
-                tickTimer.reset()
-            }
-
-            "motion" -> if (thePlayer.onGround) {
-                fakeJump()
-                thePlayer.motionY = 0.42
-            } else if (thePlayer.motionY < 0.1) {
-                thePlayer.motionY = -0.3
-            }
-
-            // Old Name (Jump)
-            "motionjump" -> if (thePlayer.onGround && tickTimer.hasTimePassed(jumpDelay)) {
-                fakeJump()
-                thePlayer.motionY = jumpMotion.toDouble()
-                tickTimer.reset()
-            }
-
-            "motiontp" -> if (thePlayer.onGround) {
-                fakeJump()
-                thePlayer.motionY = 0.42
-            } else if (thePlayer.motionY < 0.23) {
-                thePlayer.setPosition(thePlayer.posX, truncate(thePlayer.posY), thePlayer.posZ)
-            }
-
-            "packet" -> if (thePlayer.onGround && tickTimer.hasTimePassed(2)) {
-                fakeJump()
-                sendPackets(
-                    C04PacketPlayerPosition(
-                        thePlayer.posX,
-                        thePlayer.posY + 0.42,
-                        thePlayer.posZ,
-                        false
-                    ),
-                    C04PacketPlayerPosition(
-                        thePlayer.posX,
-                        thePlayer.posY + 0.753,
-                        thePlayer.posZ,
-                        false
-                    )
-                )
-                thePlayer.setPosition(thePlayer.posX, thePlayer.posY + 1.0, thePlayer.posZ)
-                tickTimer.reset()
-            }
-
-            "teleport" -> {
-                if (teleportNoMotion) {
-                    thePlayer.motionY = 0.0
-                }
-                if ((thePlayer.onGround || !teleportGround) && tickTimer.hasTimePassed(teleportDelay)) {
-                    fakeJump()
-                    thePlayer.setPositionAndUpdate(
-                        thePlayer.posX, thePlayer.posY + teleportHeight, thePlayer.posZ
-                    )
-                    tickTimer.reset()
-                }
-            }
-
-            "constantmotion" -> {
-                if (thePlayer.onGround) {
-                    if (constantMotionJumpPacket) {
-                        fakeJump()
-                    }
-                    jumpGround = thePlayer.posY
-                    thePlayer.motionY = constantMotion.toDouble()
-                }
-                if (thePlayer.posY > jumpGround + constantMotionJumpGround) {
-                    if (constantMotionJumpPacket) {
-                        fakeJump()
-                    }
-                    thePlayer.setPosition(
-                        thePlayer.posX, truncate(thePlayer.posY), thePlayer.posZ
-                    ) // TODO: toInt() required?
-                    thePlayer.motionY = constantMotion.toDouble()
-                    jumpGround = thePlayer.posY
-                }
-            }
-
-            "pulldown" -> {
-                if (!thePlayer.onGround && thePlayer.motionY < triggerMotion) {
-                    thePlayer.motionY = -dragMotion.toDouble()
-                } else {
-                    fakeJump()
-                }
-            }
-
-            "aac3.3.9" -> {
-                if (thePlayer.onGround) {
-                    fakeJump()
-                    thePlayer.motionY = 0.4001
-                }
-                mc.timer.timerSpeed = 1f
-                if (thePlayer.motionY < 0) {
-                    thePlayer.motionY -= 0.00000945
-                    mc.timer.timerSpeed = 1.6f
-                }
-            }
-
-            "aac3.6.4" -> if (thePlayer.ticksExisted % 4 == 1) {
-                thePlayer.motionY = 0.4195464
-                thePlayer.setPosition(thePlayer.posX - 0.035, thePlayer.posY, thePlayer.posZ)
-            } else if (thePlayer.ticksExisted % 4 == 0) {
-                thePlayer.motionY = -0.5
-                thePlayer.setPosition(thePlayer.posX + 0.035, thePlayer.posY, thePlayer.posZ)
-            }
-        }
-    }
-
-    /**
-     *
-     * TOWER FUNCTION
-     *
-     * Search for placeable block
-     *
-     * @param blockPosition pos
-     * @return
-     */
-    private fun search(blockPosition: BlockPos): Boolean {
-        val thePlayer = mc.thePlayer ?: return false
-        if (!isReplaceable(blockPosition)) {
-            return false
-        }
-
-        val eyesPos = thePlayer.eyes
-        var placeRotation: PlaceRotation? = null
-        for (facingType in EnumFacing.values()) {
-            val neighbor = blockPosition.offset(facingType)
-            if (!canBeClicked(neighbor)) {
-                continue
-            }
-            val dirVec = Vec3(facingType.directionVec)
-
-            for (x in 0.1..0.9) {
-                for (y in 0.1..0.9) {
-                    for (z in 0.1..0.9) {
-                        val posVec = Vec3(blockPosition).addVector(
-                            if (matrix) 0.5 else x, if (matrix) 0.5 else y, if (matrix) 0.5 else z
-                        )
-
-                        val distanceSqPosVec = eyesPos.squareDistanceTo(posVec)
-                        val hitVec = posVec + (dirVec * 0.5)
-
-                        if (eyesPos.distanceTo(hitVec) > 4.25
-                            || distanceSqPosVec > eyesPos.squareDistanceTo(posVec + dirVec)
-                            || mc.theWorld.rayTraceBlocks(eyesPos, hitVec, false, true, false) != null
-                        ) continue
-
-                        // face block
-                        val rotation = toRotation(hitVec, false)
-
-                        val rotationVector = getVectorForRotation(rotation)
-                        val vector = eyesPos + (rotationVector * 4.25)
-
-                        val obj = mc.theWorld.rayTraceBlocks(eyesPos, vector, false, false, true) ?: continue
-
-                        if (obj.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK || obj.blockPos != neighbor)
-                            continue
-
-                        if (placeRotation == null || getRotationDifference(rotation) < getRotationDifference(
-                                placeRotation.rotation
-                            )
-                        )
-                            placeRotation = PlaceRotation(PlaceInfo(neighbor, facingType.opposite, hitVec), rotation)
-                    }
-                }
-            }
-        }
-
-        placeRotation ?: return false
-
-        lockRotation = placeRotation.rotation.fixedSensitivity()
-        placeInfo = placeRotation.placeInfo
-
-        return true
     }
 
     @EventTarget
-    fun onTick(event: TickEvent) {
+    fun onTick(event: GameTickEvent) {
         val target = placeRotation?.placeInfo
 
         if (extraClicks) {
@@ -915,7 +627,9 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
                 angleThresholdForReset = angleThresholdUntilReset,
                 smootherMode = this.smootherMode,
                 simulateShortStop = simulateShortStop,
-                startOffSlow = startFirstRotationSlow
+                startOffSlow = startRotatingSlow,
+                slowDownOnDirChange = slowDownOnDirectionChange,
+                useStraightLinePath = useStraightLinePath
             )
 
         } else {
@@ -986,7 +700,7 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
         }
     }
 
-    private fun place(placeInfo: PlaceInfo) {
+    fun place(placeInfo: PlaceInfo) {
         val player = mc.thePlayer ?: return
         val world = mc.theWorld ?: return
         if (!delayTimer.hasTimePassed() || shouldKeepLaunchPosition && launchY - 1 != placeInfo.vec3.yCoord.toInt() && scaffoldMode != "Expand")
@@ -1072,7 +786,7 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
             }
         }
 
-        if (raytrace.typeOfHit != MovingObjectPosition.MovingObjectType.BLOCK || !shouldPlace) {
+        if (!raytrace.typeOfHit.isBlock || !shouldPlace) {
             return
         }
 
@@ -1113,7 +827,6 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
             mc.gameSettings.thirdPersonView = 0
         }
 
-        lockRotation = null
         placeRotation = null
         mc.timer.timerSpeed = 1f
 
@@ -1136,20 +849,6 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
         }
     }
 
-    @EventTarget
-    fun onJump(event: JumpEvent) {
-        if (onJump) {
-            if (scaffoldMode == "GodBridge" && (autoJump || jumpAutomatically) || shouldJumpOnInput)
-                return
-            if (towerMode == "None" || towerMode == "Jump")
-                return
-            if (Speed.state || Fly.state)
-                return
-
-            event.cancelEvent()
-        }
-    }
-
     // Visuals
     @EventTarget
     fun onRender3D(event: Render3DEvent) {
@@ -1163,7 +862,7 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
                 performBlockRaytrace(it, mc.playerController.blockReachDistance)?.let { raytrace ->
                     val timePassed = System.currentTimeMillis() - extraClick.lastClick >= extraClick.delay
 
-                    if (raytrace.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK && timePassed) {
+                    if (raytrace.typeOfHit.isBlock && timePassed) {
                         extraClick = ExtraClickInfo(
                             TimeUtils.randomClickDelay(extraClickMinCPS, extraClickMaxCPS),
                             System.currentTimeMillis(),
@@ -1460,7 +1159,7 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
 
     private fun switchBlockNextTickIfPossible(stack: ItemStack) {
         val player = mc.thePlayer ?: return
-        if (autoBlock in arrayOf("Off","Switch")) return
+        if (autoBlock in arrayOf("Off", "Switch")) return
         val switchAmount = if (earlySwitch) amountBeforeSwitch else 0
         if (stack.stackSize > switchAmount) return
 
@@ -1718,7 +1417,7 @@ object Scaffold : Module("Scaffold", Category.WORLD, Keyboard.KEY_I, hideModule 
     /**
      * Returns the amount of blocks
      */
-    private val blocksAmount: Int
+    val blocksAmount: Int
         get() {
             var amount = 0
             for (i in 36..44) {

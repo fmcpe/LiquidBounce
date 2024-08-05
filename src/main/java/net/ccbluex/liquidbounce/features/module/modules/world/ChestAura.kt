@@ -90,7 +90,10 @@ object ChestAura : Module("ChestAura", Category.WORLD) {
 
     // Turn Speed
     private val simulateShortStop by BoolValue("SimulateShortStop", false) { rotations }
-    private val startFirstRotationSlow by BoolValue("StartFirstRotationSlow", false) { rotations }
+    private val startRotatingSlow by BoolValue("StartRotatingSlow", false) { rotations }
+
+    private val slowDownOnDirectionChange by BoolValue("SlowDownOnDirectionChange", false) { rotations }
+    private val useStraightLinePath by BoolValue("UseStraightLinePath", true) { rotations }
 
     private val maxHorizontalSpeedValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
         override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minHorizontalSpeed)
@@ -142,10 +145,8 @@ object ChestAura : Module("ChestAura", Category.WORLD) {
     private val decimalFormat = DecimalFormat("##0.00", DecimalFormatSymbols(Locale.ENGLISH))
 
     @EventTarget
-    fun onMotion(event: MotionEvent) {
-        if (Blink.handleEvents() || KillAura.isBlockingChestAura || event.eventState != EventState.POST || !timer.hasTimePassed(
-                delay
-            ))
+    fun onRotationUpdate(event: RotationUpdateEvent) {
+        if (Blink.handleEvents() || KillAura.isBlockingChestAura || !timer.hasTimePassed(delay))
             return
 
         val thePlayer = mc.thePlayer ?: return
@@ -221,7 +222,9 @@ object ChestAura : Module("ChestAura", Category.WORLD) {
                 angleThresholdUntilReset,
                 smootherMode,
                 simulateShortStop,
-                startFirstRotationSlow
+                startRotatingSlow,
+                slowDownOnDirChange = slowDownOnDirectionChange,
+                useStraightLinePath = useStraightLinePath
             )
         }
     }
@@ -338,7 +341,7 @@ object ChestAura : Module("ChestAura", Category.WORLD) {
     }
 
     @EventTarget
-    fun onTick(event: TickEvent) {
+    fun onTick(event: GameTickEvent) {
         val player = mc.thePlayer ?: return
         val target = tileTarget ?: return
 

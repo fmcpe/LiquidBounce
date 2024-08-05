@@ -130,6 +130,7 @@ public abstract class MixinItemRenderer {
      */
     @Overwrite
     public void renderItemInFirstPerson(float partialTicks) {
+        final KillAura killAura = KillAura.INSTANCE;
         float f = 1f - (prevEquippedProgress + (equippedProgress - prevEquippedProgress) * partialTicks);
         EntityPlayerSP abstractclientplayer = mc.thePlayer;
         float f1 = abstractclientplayer.getSwingProgress(partialTicks);
@@ -140,8 +141,25 @@ public abstract class MixinItemRenderer {
         rotateWithPlayerRotations(abstractclientplayer, partialTicks);
         enableRescaleNormal();
         pushMatrix();
+
+        if (Animations.INSTANCE.handleEvents()) {
+            float scale = Animations.INSTANCE.getHandItemScale();
+            float x = Animations.INSTANCE.getHandX();
+            float y = Animations.INSTANCE.getHandY();
+            float rotX = Animations.INSTANCE.getHandPosX();
+            float rotY = Animations.INSTANCE.getHandPosY();
+            float rotZ = Animations.INSTANCE.getHandPosZ();
+
+            translate(x, y, scale);
+            rotate(rotX, 1f, 0f, 0f);
+            rotate(rotY, 0f, 1f, 0f);
+            rotate(rotZ, 0f, 0f, 1f);
+        }
+
         if (itemToRender != null) {
-            boolean isForceBlocking = (itemToRender.getItem() instanceof ItemSword && KillAura.INSTANCE.getRenderBlocking()) || NoSlow.INSTANCE.isUNCPBlocking();
+            boolean isForceBlocking = (itemToRender.getItem() instanceof ItemSword && !killAura.getAutoBlock().equals("Off") &&
+                    (killAura.getRenderBlocking() || killAura.getTarget() != null && (killAura.getBlinkAutoBlock() || killAura.getForceBlockRender()))
+                    || NoSlow.INSTANCE.isUNCPBlocking());
 
             if (itemToRender.getItem() instanceof ItemMap) {
                 renderItemMap(abstractclientplayer, f2, f, f1);
@@ -174,6 +192,7 @@ public abstract class MixinItemRenderer {
                     case BOW:
                         transformFirstPersonItem(f, f1);
                         doBowTransformations(partialTicks, abstractclientplayer);
+                        break;
                 }
             } else {
                 final Animations animations = Animations.INSTANCE;

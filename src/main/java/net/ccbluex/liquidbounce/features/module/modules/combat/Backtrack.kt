@@ -6,8 +6,8 @@
 package net.ccbluex.liquidbounce.features.module.modules.combat
 
 import net.ccbluex.liquidbounce.event.*
-import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.Category
+import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.modules.misc.AntiBot.isBot
 import net.ccbluex.liquidbounce.features.module.modules.misc.Teams
 import net.ccbluex.liquidbounce.features.module.modules.player.Blink
@@ -33,6 +33,8 @@ import net.minecraft.network.Packet
 import net.minecraft.network.handshake.client.C00Handshake
 import net.minecraft.network.play.server.*
 import net.minecraft.network.status.client.C00PacketServerQuery
+import net.minecraft.network.status.client.C01PacketPing
+import net.minecraft.network.status.server.S01PacketPong
 import net.minecraft.util.AxisAlignedBB
 import net.minecraft.util.Vec3
 import org.lwjgl.opengl.GL11.*
@@ -43,6 +45,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 object Backtrack : Module("Backtrack", Category.COMBAT, hideModule = false) {
 
+    private val nextBacktrackDelay by IntegerValue("NextBacktrackDelay", 0, 0..2000) { mode == "Modern" }
     private val delay by object : IntegerValue("Delay", 80, 0..700) {
         override fun onChange(oldValue: Int, newValue: Int): Int {
             if (mode == "Modern")
@@ -80,11 +83,27 @@ object Backtrack : Module("Backtrack", Category.COMBAT, hideModule = false) {
     private val smart by BoolValue("Smart", true) { mode == "Modern" }
 
     // ESP
-    val espMode by ListValue("ESP-Mode", arrayOf("None", "Box", "Player"), "Box", subjective = true) { mode == "Modern" }
+    val espMode by ListValue("ESP-Mode",
+        arrayOf("None", "Box", "Player"),
+        "Box",
+        subjective = true
+    ) { mode == "Modern" }
     private val rainbow by BoolValue("Rainbow", true, subjective = true) { mode == "Modern" && espMode == "Box" }
-    private val red by IntegerValue("R", 0, 0..255, subjective = true) { !rainbow && mode == "Modern" && espMode == "Box" }
-    private val green by IntegerValue("G", 255, 0..255, subjective = true) { !rainbow && mode == "Modern" && espMode == "Box" }
-    private val blue by IntegerValue("B", 0, 0..255, subjective = true) { !rainbow && mode == "Modern" && espMode == "Box" }
+    private val red by IntegerValue("R",
+        0,
+        0..255,
+        subjective = true
+    ) { !rainbow && mode == "Modern" && espMode == "Box" }
+    private val green by IntegerValue("G",
+        255,
+        0..255,
+        subjective = true
+    ) { !rainbow && mode == "Modern" && espMode == "Box" }
+    private val blue by IntegerValue("B",
+        0,
+        0..255,
+        subjective = true
+    ) { !rainbow && mode == "Modern" && espMode == "Box" }
 
     private val packetQueue = LinkedHashMap<Packet<*>, Long>()
     private val positions = mutableListOf<Pair<Vec3, Long>>()
@@ -96,6 +115,8 @@ object Backtrack : Module("Backtrack", Category.COMBAT, hideModule = false) {
     var shouldRender = true
 
     private var ignoreWholeTick = false
+
+    private var delayForNextBacktrack = 0L
 
     // Legacy
     private val maximumCachedPositions by IntegerValue("MaxCachedPositions", 10, 1..20) { mode == "Legacy" }
@@ -168,19 +189,13 @@ object Backtrack : Module("Backtrack", Category.COMBAT, hideModule = false) {
                 if (packetQueue.isEmpty() && !shouldBacktrack())
                     return
 
-                // Flush if packetQueue is not empty when not needed
-                if (packetQueue.isNotEmpty() && !shouldBacktrack()) {
-                    clearPackets()
-                    return
-                }
-
                 when (packet) {
                     // Ignore server related packets
-                    is C00Handshake, is C00PacketServerQuery, is S02PacketChat ->
+                    is C00Handshake, is C00PacketServerQuery, is S02PacketChat, is S01PacketPong ->
                         return
 
                     // Flush on teleport or disconnect
-                    is S08PacketPlayerPosLook, is S40PacketDisconnect, is S21PacketChunkData, is S26PacketMapChunkBulk -> {
+                    is S08PacketPlayerPosLook, is S40PacketDisconnect -> {
                         clearPackets()
                         return
                     }
@@ -463,12 +478,17 @@ object Backtrack : Module("Backtrack", Category.COMBAT, hideModule = false) {
     }
 
     private fun clearPackets(handlePackets: Boolean = true) {
+        if (packetQueue.isNotEmpty()) {
+            delayForNextBacktrack = System.currentTimeMillis() + nextBacktrackDelay
+        }
+
         synchronized(packetQueue) {
             if (handlePackets)
                 PacketUtils.queuedPackets.addAll(packetQueue.keys)
 
             packetQueue.clear()
         }
+
         positions.clear()
         shouldRender = false
         ignoreWholeTick = true
@@ -605,8 +625,8 @@ object Backtrack : Module("Backtrack", Category.COMBAT, hideModule = false) {
         get() = if (rainbow) rainbow() else Color(red, green, blue)
 
     fun shouldBacktrack() =
-        target?.let {
-            !it.isDead && isEnemy(it) && (mc.thePlayer?.ticksExisted ?: 0) > 20 && !ignoreWholeTick
+        mc.thePlayer != null && System.currentTimeMillis() >= delayForNextBacktrack && target?.let {
+            isEnemy(it) && (mc.thePlayer?.ticksExisted ?: 0) > 20 && !ignoreWholeTick
         } ?: false
 
     private fun reset() {

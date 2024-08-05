@@ -6,8 +6,8 @@
 package net.ccbluex.liquidbounce.features.module.modules.combat
 
 import net.ccbluex.liquidbounce.event.*
-import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.Category
+import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.modules.movement.Speed
 import net.ccbluex.liquidbounce.utils.EntityUtils.isLookingOnEntities
 import net.ccbluex.liquidbounce.utils.EntityUtils.isSelected
@@ -33,15 +33,14 @@ import net.minecraft.entity.Entity
 import net.minecraft.network.Packet
 import net.minecraft.network.play.client.C03PacketPlayer
 import net.minecraft.network.play.client.C07PacketPlayerDigging
+import net.minecraft.network.play.client.C07PacketPlayerDigging.Action.STOP_DESTROY_BLOCK
 import net.minecraft.network.play.client.C0FPacketConfirmTransaction
-import net.minecraft.network.play.client.C07PacketPlayerDigging.Action.*
 import net.minecraft.network.play.server.S12PacketEntityVelocity
 import net.minecraft.network.play.server.S27PacketExplosion
 import net.minecraft.network.play.server.S32PacketConfirmTransaction
 import net.minecraft.util.AxisAlignedBB
 import net.minecraft.util.BlockPos
 import net.minecraft.util.EnumFacing.DOWN
-import java.util.LinkedHashMap
 import kotlin.math.abs
 import kotlin.math.atan2
 import kotlin.math.sqrt
@@ -56,7 +55,7 @@ object Velocity : Module("Velocity", Category.COMBAT, hideModule = false) {
             "Simple", "AAC", "AACPush", "AACZero", "AACv4",
             "Reverse", "SmoothReverse", "Jump", "Glitch", "Legit",
             "GhostBlock", "Vulcan", "S32Packet", "MatrixReduce",
-            "Intave", "Delay", "GrimC03"
+            "Intave", "Delay", "GrimC03", "HypixelAir"
         ), "Simple"
     )
 
@@ -297,9 +296,18 @@ object Velocity : Module("Velocity", Category.COMBAT, hideModule = false) {
             "intave" -> {
                 intaveTick++
                 if (hasReceivedVelocity && mc.thePlayer.hurtTime == 2) {
-                    if (mc.thePlayer.onGround && intaveTick % 2 == 0) {
-                        mc.thePlayer.tryJump()
+                    if (thePlayer.onGround && intaveTick % 2 == 0) {
+                        thePlayer.tryJump()
                         intaveTick = 0
+                    }
+                    hasReceivedVelocity = false
+                }
+            }
+
+            "hypixelair" -> {
+                if (hasReceivedVelocity) {
+                    if (thePlayer.onGround) {
+                        thePlayer.tryJump()
                     }
                     hasReceivedVelocity = false
                 }
@@ -418,6 +426,11 @@ object Velocity : Module("Velocity", Category.COMBAT, hideModule = false) {
                     }
                 }
 
+                "hypixelair" -> {
+                    hasReceivedVelocity = true
+                    event.cancelEvent()
+                }
+
                 "vulcan" -> {
                     event.cancelEvent()
                 }
@@ -450,7 +463,7 @@ object Velocity : Module("Velocity", Category.COMBAT, hideModule = false) {
      * Tick Event (Abuse Timer Balance)
      */
     @EventTarget
-    fun onTick(event: TickEvent) {
+    fun onTick(event: GameTickEvent) {
         val player = mc.thePlayer ?: return
 
         if (mode != "GrimC03")

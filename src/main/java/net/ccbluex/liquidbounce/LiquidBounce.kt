@@ -19,6 +19,7 @@ import net.ccbluex.liquidbounce.features.command.CommandManager
 import net.ccbluex.liquidbounce.features.command.CommandManager.registerCommands
 import net.ccbluex.liquidbounce.features.module.ModuleManager
 import net.ccbluex.liquidbounce.features.module.ModuleManager.registerModules
+import net.ccbluex.liquidbounce.features.module.modules.world.scaffolds.Tower
 import net.ccbluex.liquidbounce.features.special.BungeeCordSpoof
 import net.ccbluex.liquidbounce.features.special.ClientFixes
 import net.ccbluex.liquidbounce.features.special.ClientRichPresence
@@ -47,6 +48,7 @@ import net.ccbluex.liquidbounce.utils.ClientUtils.disableFastRender
 import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils
 import net.ccbluex.liquidbounce.utils.render.MiniMapRegister
 import net.ccbluex.liquidbounce.utils.timing.TickedActions
+import net.ccbluex.liquidbounce.utils.timing.WaitTickUtils
 import kotlin.concurrent.thread
 
 object LiquidBounce {
@@ -122,6 +124,8 @@ object LiquidBounce {
                     registerListener(PacketUtils)
                     registerListener(TimerBalanceUtils)
                     registerListener(BPSUtils)
+                    registerListener(Tower)
+                    registerListener(WaitTickUtils)
 
                     // Load client fonts
                     loadFonts()

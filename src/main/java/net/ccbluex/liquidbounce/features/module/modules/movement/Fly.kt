@@ -22,20 +22,25 @@ import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.sparta
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.spartan.Spartan2
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.vanilla.SmoothVanilla
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.vanilla.Vanilla
+import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.verus.Verus
+import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.verus.VerusGlide
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.vulcan.Vulcan
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.vulcan.VulcanGhost
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.vulcan.VulcanOld
 import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
 import net.ccbluex.liquidbounce.utils.extensions.stop
 import net.ccbluex.liquidbounce.utils.extensions.stopXZ
+import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils.serverSlot
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawPlatform
 import net.ccbluex.liquidbounce.utils.timing.MSTimer
+import net.ccbluex.liquidbounce.utils.timing.WaitTickUtils
 import net.ccbluex.liquidbounce.value.BoolValue
 import net.ccbluex.liquidbounce.value.FloatValue
 import net.ccbluex.liquidbounce.value.IntegerValue
 import net.ccbluex.liquidbounce.value.ListValue
 import net.minecraft.network.play.client.C03PacketPlayer.C04PacketPlayerPosition
 import net.minecraft.util.AxisAlignedBB
+import net.minecraft.util.BlockPos
 import org.lwjgl.input.Keyboard
 import java.awt.Color
 
@@ -64,11 +69,14 @@ object Fly : Module("Fly", Category.MOVEMENT, Keyboard.KEY_F, hideModule = false
         // Vulcan
         Vulcan, VulcanOld, VulcanGhost,
 
+        // Verus
+        Verus, VerusGlide,
+
         // Other anti-cheats
-        MineSecure, HawkEye, HAC, WatchCat, Verus,
+        MineSecure, HawkEye, HAC, WatchCat,
 
         // Other
-        Jetpack, KeepAlive, Collide, Jump, Flag
+        Jetpack, KeepAlive, Collide, Jump, Flag, Fireball
     )
 
     private val modes = flyModes.map { it.modeName }.toTypedArray()
@@ -113,8 +121,57 @@ object Fly : Module("Fly", Category.MOVEMENT, Keyboard.KEY_F, hideModule = false
     val stopOnNoMove by BoolValue("StopOnNoMove", false) { mode == "BlocksMC" || mode == "BlocksMC2" }
     val debugFly by BoolValue("Debug", false) { mode == "BlocksMC" || mode == "BlocksMC2" }
 
+    // Fireball
+    val rotations by BoolValue("Rotations", true) { mode == "Fireball" }
+    val pitchMode by ListValue("PitchMode", arrayOf("Custom", "Smart"), "Custom") { mode == "Fireball" }
+    val rotationPitch by FloatValue("Pitch", 90f,0f..90f) { pitchMode != "Smart" && mode == "Fireball" }
+    val invertYaw by BoolValue("InvertYaw", true) { pitchMode != "Smart" && mode == "Fireball" }
+
+    val autoFireball by ListValue("AutoFireball", arrayOf("Off", "Pick", "Spoof", "Switch"), "Spoof") { mode == "Fireball" }
+    val swing by BoolValue("Swing", true) { mode == "Fireball" }
+    val fireballTry by IntegerValue("MaxFireballTry", 1, 0..2) { mode == "Fireball" }
+    val fireBallThrowMode by ListValue("FireballThrow", arrayOf("Normal", "Edge"), "Normal") { mode == "Fireball" }
+    val edgeThreshold by FloatValue("EdgeThreshold", 1.05f,1f..2f) { fireBallThrowMode == "Edge" && mode == "Fireball" }
+
+    val smootherMode by ListValue("SmootherMode", arrayOf("Linear", "Relative"), "Relative") { rotations && mode == "Fireball" }
+    val keepRotation by BoolValue("KeepRotation", true) { rotations && mode == "Fireball" }
+    val keepTicks by object : IntegerValue("KeepTicks", 1, 1..20) {
+        override fun onChange(oldValue: Int, newValue: Int) = newValue.coerceAtLeast(minimum)
+        override fun isSupported() = rotations && keepRotation && mode == "Fireball"
+    }
+
+    val simulateShortStop by BoolValue("SimulateShortStop", false) {  rotations && mode == "Fireball" }
+    val startFirstRotationSlow by BoolValue("StartFirstRotationSlow", false) { rotations && mode == "Fireball" }
+
+    val maxHorizontalSpeed: FloatValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minHorizontalSpeed.get())
+        override fun isSupported() = rotations && mode == "Fireball"
+    }
+
+    val minHorizontalSpeed: FloatValue = object : FloatValue("MinHorizontalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxHorizontalSpeed.get())
+        override fun isSupported() = rotations && mode == "Fireball"
+    }
+
+    val maxVerticalSpeed: FloatValue = object : FloatValue("MaxVerticalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minVerticalSpeed.get())
+        override fun isSupported() = rotations && mode == "Fireball"
+    }
+
+    val minVerticalSpeed: FloatValue = object : FloatValue("MinVerticalSpeed", 180f, 1f..180f) {
+        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxVerticalSpeed.get())
+        override fun isSupported() = rotations && mode == "Fireball"
+    }
+
+    val angleThresholdUntilReset by FloatValue("AngleThresholdUntilReset", 5f, 0.1f..180f) { rotations && mode == "Fireball" }
+
+    val autoJump by BoolValue("AutoJump", true) { mode == "Fireball" }
+
     // Visuals
     private val mark by BoolValue("Mark", true, subjective = true)
+
+    var wasFired = false
+    var firePosition: BlockPos ?= null
 
     var jumpY = 0.0
 
@@ -137,11 +194,17 @@ object Fly : Module("Fly", Category.MOVEMENT, Keyboard.KEY_F, hideModule = false
     override fun onDisable() {
         val thePlayer = mc.thePlayer ?: return
 
-        if (!mode.startsWith("AAC") && mode != "Hypixel" && mode != "SmoothVanilla" && mode != "Vanilla" && mode != "Rewinside" && mode != "Collide" && mode != "Jump") {
+        if (!mode.startsWith("AAC") && mode != "Hypixel" && mode != "VerusGlide"
+            && mode != "SmoothVanilla" && mode != "Vanilla" && mode != "Rewinside"
+            && mode != "Fireball" && mode != "Collide" && mode != "Jump") {
+
             if (mode == "CubeCraft") thePlayer.stopXZ()
             else thePlayer.stop()
         }
 
+        wasFired = false
+        firePosition = null
+        serverSlot = thePlayer.inventory.currentItem
         thePlayer.capabilities.isFlying = wasFlying
         mc.timer.timerSpeed = 1f
         thePlayer.speedInAir = 0.02f
@@ -152,6 +215,17 @@ object Fly : Module("Fly", Category.MOVEMENT, Keyboard.KEY_F, hideModule = false
     @EventTarget
     fun onUpdate(event: UpdateEvent) {
         modeModule.onUpdate()
+    }
+
+    @EventTarget
+    fun onTick(event: GameTickEvent) {
+        if (mode == "Fireball" && wasFired) {
+            WaitTickUtils.scheduleTicks(2) {
+                Fly.state = false
+            }
+        }
+
+        modeModule.onTick()
     }
 
     @EventTarget

@@ -6,11 +6,16 @@
 package net.ccbluex.liquidbounce.features.module.modules.movement
 
 import net.ccbluex.liquidbounce.event.*
-import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.Category
-import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.aac.*
+import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.aac.AACHop3313
+import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.aac.AACHop350
+import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.aac.AACHop4
+import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.aac.AACHop5
 import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.hypixel.HypixelHop
-import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.matrix.*
+import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.matrix.MatrixHop
+import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.matrix.MatrixSlowHop
+import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.matrix.OldMatrixHop
 import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.ncp.*
 import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.other.*
 import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.spartan.SpartanYPort
@@ -40,6 +45,7 @@ object Speed : Module("Speed", Category.MOVEMENT, hideModule = false) {
         NCPYPort,
         UNCPHop,
         UNCPHop2,
+        UNCPLowHop,
 
         // AAC
         AACHop3313,
@@ -110,6 +116,11 @@ object Speed : Module("Speed", Category.MOVEMENT, hideModule = false) {
 
     val cubecraftPortLength by FloatValue("CubeCraft-PortLength", 1f, 0.1f..2f) { mode == "TeleportCubeCraft" }
 
+    val boost by BoolValue("Boost", true) { mode == "MineBlazeHop" }
+    val strafeStrength by FloatValue("StrafeStrength", 0.29f, 0.1f..0.29f) { mode == "MineBlazeHop" }
+    val groundTimer by FloatValue("GroundTimer", 0.5f, 0.1f..5f) { mode == "MineBlazeHop" }
+    val airTimer by FloatValue("AirTimer", 1.09f, 0.1f..5f) { mode == "MineBlazeHop" }
+
     @EventTarget
     fun onUpdate(event: UpdateEvent) {
         val thePlayer = mc.thePlayer ?: return
@@ -138,15 +149,15 @@ object Speed : Module("Speed", Category.MOVEMENT, hideModule = false) {
 
     @EventTarget
     fun onMove(event: MoveEvent) {
-        if (mc.thePlayer.isSneaking)
+        if (mc.thePlayer?.isSneaking == true)
             return
 
         modeModule.onMove(event)
     }
 
     @EventTarget
-    fun onTick(event: TickEvent) {
-        if (mc.thePlayer.isSneaking)
+    fun onTick(event: GameTickEvent) {
+        if (mc.thePlayer?.isSneaking == true)
             return
 
         modeModule.onTick()
@@ -154,7 +165,7 @@ object Speed : Module("Speed", Category.MOVEMENT, hideModule = false) {
 
     @EventTarget
     fun onStrafe(event: StrafeEvent) {
-        if (mc.thePlayer.isSneaking)
+        if (mc.thePlayer?.isSneaking == true)
             return
 
         modeModule.onStrafe()
@@ -162,7 +173,7 @@ object Speed : Module("Speed", Category.MOVEMENT, hideModule = false) {
 
     @EventTarget
     fun onJump(event: JumpEvent) {
-        if (mc.thePlayer.isSneaking)
+        if (mc.thePlayer?.isSneaking == true)
             return
 
         modeModule.onJump(event)
@@ -170,7 +181,7 @@ object Speed : Module("Speed", Category.MOVEMENT, hideModule = false) {
 
     @EventTarget
     fun onPacket(event: PacketEvent) {
-        if (mc.thePlayer.isSneaking)
+        if (mc.thePlayer?.isSneaking == true)
             return
 
         modeModule.onPacket(event)
