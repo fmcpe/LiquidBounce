@@ -6,9 +6,10 @@
 package net.ccbluex.liquidbounce.ui.client
 
 import net.ccbluex.liquidbounce.LiquidBounce.CLIENT_NAME
-import net.ccbluex.liquidbounce.LiquidBounce.CLIENT_WEBSITE
 import net.ccbluex.liquidbounce.LiquidBounce.clientVersionText
-import net.ccbluex.liquidbounce.api.messageOfTheDay
+import net.ccbluex.liquidbounce.api.ClientUpdate
+import net.ccbluex.liquidbounce.api.ClientUpdate.hasUpdate
+import net.ccbluex.liquidbounce.file.FileManager
 import net.ccbluex.liquidbounce.lang.translationMenu
 import net.ccbluex.liquidbounce.ui.client.altmanager.GuiAltManager
 import net.ccbluex.liquidbounce.ui.client.fontmanager.GuiFontManager
@@ -21,15 +22,41 @@ import net.minecraft.client.gui.GuiMultiplayer
 import net.minecraft.client.gui.GuiOptions
 import net.minecraft.client.gui.GuiSelectWorld
 import net.minecraft.client.resources.I18n
+import org.lwjgl.input.Mouse
+import java.text.SimpleDateFormat
+import java.time.Instant
+import java.util.*
+import java.util.concurrent.TimeUnit
 
 class GuiMainMenu : AbstractScreen() {
+
+    private var popup: PopupScreen? = null
+
+    companion object {
+        private var popupOnce = false
+        var lastWarningTime: Long? = null
+        private val warningInterval = TimeUnit.DAYS.toMillis(7)
+    }
+
+    init {
+        if (!popupOnce) {
+            if (FileManager.firstStart) {
+                showWelcomePopup()
+            } else if (hasUpdate()) {
+                showUpdatePopup()
+            } else if (lastWarningTime == null || Instant.now().toEpochMilli() - lastWarningTime!! > warningInterval) {
+                showDiscontinuedWarning()
+            }
+            popupOnce = true
+        }
+    }
 
     override fun initGui() {
         val defaultHeight = height / 4 + 48
 
         val baseCol1 = width / 2 - 100
         val baseCol2 = width / 2 + 2
-        
+
         +GuiButton(100, baseCol1, defaultHeight + 24, 98, 20, translationMenu("altManager"))
         +GuiButton(103, baseCol2, defaultHeight + 24, 98, 20, translationMenu("mods"))
         +GuiButton(109, baseCol1, defaultHeight + 24 * 2, 98, 20, translationMenu("fontManager"))
@@ -45,6 +72,102 @@ class GuiMainMenu : AbstractScreen() {
 
         +GuiButton(0, baseCol1, defaultHeight + 24 * 4, 98, 20, I18n.format("menu.options"))
         +GuiButton(4, baseCol2, defaultHeight + 24 * 4, 98, 20, I18n.format("menu.quit"))
+    }
+
+    private fun showWelcomePopup() {
+        popup = PopupScreen(
+            "§a§lWelcome!",
+            """
+        §eThank you for downloading and installing §bLiquidBounce§e!
+
+        §6Here is some information you might find useful:§r
+        §a- §fClickGUI:§r Press §7[RightShift]§f to open ClickGUI.
+        §a- §fRight-click modules with a '+' to edit.
+        §a- §fHover over a module to see its description.
+
+        §6Important Commands:§r
+        §a- §f.bind <module> <key> / .bind <module> none
+        §a- §f.config load <name> / .config list
+
+        §bNeed help? Contact us!§r
+        - §fYouTube: §9https://youtube.com/ccbluex
+        - §fTwitter: §9https://twitter.com/ccbluex
+        - §fForum: §9https://forums.ccbluex.net/
+        """.trimIndent(),
+            listOf(
+                ButtonData("§aOK") { }
+            ),
+            {
+                popup = null
+            }
+        )
+    }
+
+    private fun showUpdatePopup() {
+        val newestVersion = ClientUpdate.newestVersion ?: return
+
+        val isReleaseBuild = newestVersion.release
+        val updateType = if (isReleaseBuild) "version" else "development build"
+
+        val dateFormatter = SimpleDateFormat("EEEE, MMMM dd, yyyy, h a z", Locale.ENGLISH)
+        val newestVersionDate = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss").parse(newestVersion.date)
+        val formattedNewestDate = dateFormatter.format(newestVersionDate)
+
+        val updateMessage = """
+        §eA new $updateType of LiquidBounce is available!
+
+        - ${if (isReleaseBuild) "§aVersion" else "§aBuild ID"}:§r ${if (isReleaseBuild) newestVersion.lbVersion else newestVersion.buildId}
+        - §aMinecraft Version:§r ${newestVersion.mcVersion}
+        - §aBranch:§r ${newestVersion.branch}
+        - §aDate:§r $formattedNewestDate
+
+        §6Changes:§r
+        ${newestVersion.message}
+
+        §bUpgrade now to enjoy the latest features and improvements!§r
+    """.trimIndent()
+
+        popup = PopupScreen(
+            "§bNew Update Available!",
+            updateMessage,
+            listOf(
+                ButtonData("§aDownload") { MiscUtils.showURL(newestVersion.url) }
+            ),
+            {
+                popup = null
+            }
+        )
+    }
+
+    private fun showDiscontinuedWarning() {
+        popup = PopupScreen(
+            "§c§lUnsupported version",
+            """
+        §6§lThis version is discontinued and unsupported.§r
+        
+        §eWe strongly recommend switching to §bLiquidBounce Nextgen§e, 
+        which offers the following benefits:
+        
+        §a- §fSupports all Minecraft versions from §71.7§f to §71.21+§f.
+        §a- §fFrequent updates with the latest bypasses and features.
+        §a- §fActive development and official support.
+        §a- §fImproved performance and compatibility.
+        
+        §cWhy upgrade?§r
+        - No new bypasses or features will be introduced in this version.
+        - Auto config support will not be actively maintained.
+        - Unofficial forks of this version are discouraged as they lack the full feature set of Nextgen and cannot be trusted.
+
+        §9Upgrade to LiquidBounce Nextgen today for a better experience!§r
+        """.trimIndent(),
+            listOf(
+                ButtonData("§aDownload Nextgen") { MiscUtils.showURL("https://liquidbounce.net/download") },
+                ButtonData("§eInstallation Tutorial") { MiscUtils.showURL("https://www.youtube.com/watch?v=i_r1i4m-NZc") }
+            )
+        ) {
+            popup = null
+            lastWarningTime = Instant.now().toEpochMilli()
+        }
     }
 
     override fun drawScreen(mouseX: Int, mouseY: Int, partialTicks: Float) {
@@ -67,52 +190,27 @@ class GuiMainMenu : AbstractScreen() {
             true
         )
 
-        val messageOfTheDay = messageOfTheDay?.message
-        if (messageOfTheDay?.isNotBlank() == true) {
-            val lines = messageOfTheDay.lines()
-
-            drawRoundedBorderRect(
-                width / 2f - 115,
-                height / 4f + 190,
-                width / 2f + 115,
-                height / 4f + 200 + (Fonts.fontSemibold35.fontHeight * lines.size),
-                2f,
-                Integer.MIN_VALUE,
-                Integer.MIN_VALUE,
-                3F
-            )
-
-            // Draw rect below main rect and within draw MOTD text
-            for ((index, line) in lines.withIndex()) {
-                Fonts.fontSemibold35.drawCenteredString(
-                    line, width / 2F, height / 4f + 197.5f
-                            + (Fonts.fontSemibold35.fontHeight * index), 0xffffff, true
-                )
-            }
-        }
-
         super.drawScreen(mouseX, mouseY, partialTicks)
+
+        if (popup != null) {
+            popup!!.drawScreen(width, height, mouseX, mouseY)
+        }
     }
 
     override fun mouseClicked(mouseX: Int, mouseY: Int, mouseButton: Int) {
-        // When clicking the message of the day text
-        val messageOfTheDay = messageOfTheDay?.message
-        if (messageOfTheDay?.isNotBlank() == true) {
-            val lines = messageOfTheDay.lines()
-            val motdHeight = height / 4f + 198
-            val motdWidth = width / 2f - 115
-            val motdHeightEnd = motdHeight + 2 + (Fonts.fontSemibold35.fontHeight * lines.size)
-
-            if (mouseX >= motdWidth && mouseX <= width / 2f + 115 && mouseY >= motdHeight && mouseY <= motdHeightEnd) {
-                // Open liquidbounce website
-                MiscUtils.showURL("https://$CLIENT_WEBSITE")
-            }
+        if (popup != null) {
+            popup!!.mouseClicked(mouseX, mouseY, mouseButton)
+            return
         }
 
         super.mouseClicked(mouseX, mouseY, mouseButton)
     }
 
     override fun actionPerformed(button: GuiButton) {
+        if (popup != null) {
+            return
+        }
+
         when (button.id) {
             0 -> mc.displayGuiScreen(GuiOptions(this, mc.gameSettings))
             1 -> mc.displayGuiScreen(GuiSelectWorld(this))
@@ -125,5 +223,16 @@ class GuiMainMenu : AbstractScreen() {
             108 -> mc.displayGuiScreen(GuiContributors(this))
             109 -> mc.displayGuiScreen(GuiFontManager(this))
         }
+    }
+
+    override fun handleMouseInput() {
+        if (popup != null) {
+            val eventDWheel = Mouse.getEventDWheel()
+            if (eventDWheel != 0) {
+                popup!!.handleMouseWheel(eventDWheel)
+            }
+        }
+
+        super.handleMouseInput()
     }
 }
