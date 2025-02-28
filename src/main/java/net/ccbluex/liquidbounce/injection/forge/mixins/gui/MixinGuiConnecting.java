@@ -6,7 +6,7 @@
 package net.ccbluex.liquidbounce.injection.forge.mixins.gui;
 
 import net.ccbluex.liquidbounce.ui.font.Fonts;
-import net.ccbluex.liquidbounce.utils.ServerUtils;
+import net.ccbluex.liquidbounce.utils.client.ServerUtils;
 import net.ccbluex.liquidbounce.utils.render.RenderUtils;
 import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.ScaledResolution;
@@ -47,8 +47,8 @@ public abstract class MixinGuiConnecting extends GuiScreen {
             ip = ServerUtils.INSTANCE.hideSensitiveInformation(serverData.serverIP);
         }
 
-        Fonts.font40.drawCenteredString("Connecting to", scaledResolution.getScaledWidth() / 2f, scaledResolution.getScaledHeight() / 4f + 110, 0xFFFFFF, true);
-        Fonts.font35.drawCenteredString(ip, scaledResolution.getScaledWidth() / 2f, scaledResolution.getScaledHeight() / 4f + 120, 0x5281FB, true);
+        Fonts.fontSemibold40.drawCenteredString("Connecting to", scaledResolution.getScaledWidth() / 2f, scaledResolution.getScaledHeight() / 4f + 110, 0xFFFFFF, true);
+        Fonts.fontSemibold35.drawCenteredString(ip, scaledResolution.getScaledWidth() / 2f, scaledResolution.getScaledHeight() / 4f + 120, 0x5281FB, true);
 
         super.drawScreen(mouseX, mouseY, partialTicks);
     }

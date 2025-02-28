@@ -5,25 +5,26 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.world
 
-import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.UpdateEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.Category
-import net.ccbluex.liquidbounce.utils.block.BlockUtils.getBlock
-import net.minecraft.init.Blocks.air
+import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.utils.block.block
+import net.minecraft.client.settings.GameSettings
+import net.minecraft.init.Blocks
 
 object AutoBreak : Module("AutoBreak", Category.WORLD, subjective = true, gameDetecting = false) {
 
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
-        if (mc.objectMouseOver == null || mc.objectMouseOver.blockPos == null || mc.theWorld == null)
-            return
+    val onUpdate = handler<UpdateEvent> {
+        mc.theWorld ?: return@handler
 
-        mc.gameSettings.keyBindAttack.pressed = getBlock(mc.objectMouseOver.blockPos) != air
+        val target = mc.objectMouseOver?.blockPos ?: return@handler
+
+        mc.gameSettings.keyBindAttack.pressed = target.block != Blocks.air
     }
 
     override fun onDisable() {
-        if (!mc.gameSettings.keyBindAttack.pressed)
+        if (!GameSettings.isKeyDown(mc.gameSettings.keyBindAttack))
             mc.gameSettings.keyBindAttack.pressed = false
     }
 }

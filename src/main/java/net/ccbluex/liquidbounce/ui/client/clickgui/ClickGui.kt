@@ -5,11 +5,13 @@
  */
 package net.ccbluex.liquidbounce.ui.client.clickgui
 
-import kotlinx.coroutines.*
+import kotlinx.coroutines.launch
 import net.ccbluex.liquidbounce.LiquidBounce.CLIENT_NAME
 import net.ccbluex.liquidbounce.LiquidBounce.moduleManager
 import net.ccbluex.liquidbounce.api.ClientApi
 import net.ccbluex.liquidbounce.api.autoSettingsList
+import net.ccbluex.liquidbounce.api.loadSettings
+import net.ccbluex.liquidbounce.config.SettingsUtils
 import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.modules.render.ClickGUI
 import net.ccbluex.liquidbounce.features.module.modules.render.ClickGUI.guiColor
@@ -27,17 +29,14 @@ import net.ccbluex.liquidbounce.ui.client.hud.HUD
 import net.ccbluex.liquidbounce.ui.client.hud.designer.GuiHudDesigner
 import net.ccbluex.liquidbounce.ui.client.hud.element.elements.Notification
 import net.ccbluex.liquidbounce.ui.font.AWTFontRenderer.Companion.assumeNonVolatile
-import net.ccbluex.liquidbounce.utils.ClientUtils
-import net.ccbluex.liquidbounce.utils.ClientUtils.displayChatMessage
-import net.ccbluex.liquidbounce.utils.EntityUtils.targetAnimals
-import net.ccbluex.liquidbounce.utils.EntityUtils.targetDead
-import net.ccbluex.liquidbounce.utils.EntityUtils.targetInvisible
-import net.ccbluex.liquidbounce.utils.EntityUtils.targetMobs
-import net.ccbluex.liquidbounce.utils.EntityUtils.targetPlayer
-import net.ccbluex.liquidbounce.utils.SettingsUtils
+import net.ccbluex.liquidbounce.utils.attack.EntityUtils.Targets
+import net.ccbluex.liquidbounce.utils.client.ClientUtils
+import net.ccbluex.liquidbounce.utils.client.asResourceLocation
+import net.ccbluex.liquidbounce.utils.client.chat
+import net.ccbluex.liquidbounce.utils.client.playSound
+import net.ccbluex.liquidbounce.utils.kotlin.SharedScopes
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.deltaTime
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawImage
-import net.minecraft.client.audio.PositionedSoundRecord
 import net.minecraft.client.gui.GuiScreen
 import net.minecraft.client.renderer.GlStateManager.disableLighting
 import net.minecraft.client.renderer.RenderHelper
@@ -49,7 +48,8 @@ import kotlin.math.roundToInt
 
 object ClickGui : GuiScreen() {
 
-    val panels = mutableListOf<Panel>()
+    // Note: hash key = [Panel.name]
+    val panels = linkedSetOf<Panel>()
     private val hudIcon = ResourceLocation("${CLIENT_NAME.lowercase()}/custom_hud_icon.png")
     var style: Style = LiquidBounceStyle
     private var mouseX = 0
@@ -60,6 +60,8 @@ object ClickGui : GuiScreen() {
         set(value) {
             field = value.coerceAtLeast(0)
         }
+
+    private var autoScrollY: Int? = null
 
     // Used when closing ClickGui using its key bind, prevents it from getting closed instantly after getting opened.
     // Caused by keyTyped being called along with onKey that opens the ClickGui.
@@ -72,11 +74,16 @@ object ClickGui : GuiScreen() {
         val height = 18
         var yPos = 5
 
-        for (category in Category.values()) {
-            panels += object : Panel(category.displayName, 100, yPos, width, height, false) {
-                override val elements =
-                    moduleManager.modules.filter { it.category == category }.map { ModuleElement(it) }
-            }
+        for (category in Category.entries) {
+            panels += Panel(
+                category.displayName,
+                x = 100,
+                y = yPos,
+                width,
+                height,
+                false,
+                moduleManager[category].map(::ModuleElement)
+            )
 
             yPos += 20
         }
@@ -90,132 +97,125 @@ object ClickGui : GuiScreen() {
     }
 
     private fun setupTargetsPanel(xPos: Int = 100, yPos: Int, width: Int, height: Int) =
-        object : Panel("Targets", xPos, yPos, width, height, false) {
+        Panel("Targets", xPos, yPos, width, height, false, listOf(
+            ButtonElement("Players", { if (Targets.player) guiColor else Int.MAX_VALUE }) {
+                Targets.player = !Targets.player
+            },
+            ButtonElement("Mobs", { if (Targets.mob) guiColor else Int.MAX_VALUE }) {
+                Targets.mob = !Targets.mob
+            },
+            ButtonElement("Animals", { if (Targets.animal) guiColor else Int.MAX_VALUE }) {
+                Targets.animal = !Targets.animal
+            },
+            ButtonElement("Invisible", { if (Targets.invisible) guiColor else Int.MAX_VALUE }) {
+                Targets.invisible = !Targets.invisible
+            },
+            ButtonElement("Dead", { if (Targets.dead) guiColor else Int.MAX_VALUE }) {
+                Targets.dead = !Targets.dead
+            },
+        ))
 
-            override val elements = listOf(
-                ButtonElement("Players", { if (targetPlayer) guiColor else Int.MAX_VALUE }) {
-                    targetPlayer = !targetPlayer
-                },
-                ButtonElement("Mobs", { if (targetMobs) guiColor else Int.MAX_VALUE }) {
-                    targetMobs = !targetMobs
-                },
-                ButtonElement("Animals", { if (targetAnimals) guiColor else Int.MAX_VALUE }) {
-                    targetAnimals = !targetAnimals
-                },
-                ButtonElement("Invisible", { if (targetInvisible) guiColor else Int.MAX_VALUE }) {
-                    targetInvisible = !targetInvisible
-                },
-                ButtonElement("Dead", { if (targetDead) guiColor else Int.MAX_VALUE }) {
-                    targetDead = !targetDead
-                },
-            )
+    private fun setupSettingsPanel(xPos: Int = 100, yPos: Int, width: Int, height: Int): Panel {
+        val list = autoSettingsList?.map { setting ->
+            ButtonElement(setting.name, { Integer.MAX_VALUE }) {
+                SharedScopes.IO.launch {
+                    try {
+                        chat("Loading settings...")
 
-        }
+                        // Load settings and apply them
+                        val settings = ClientApi.getSettingsScript(settingId = setting.settingId)
 
-    private fun setupSettingsPanel(xPos: Int = 100, yPos: Int, width: Int, height: Int) =
-        object : Panel("Auto Settings", xPos, yPos, width, height, false) {
+                        chat("Applying settings...")
+                        SettingsUtils.applyScript(settings)
 
-            /**
-             * Auto settings list
-             */
-            override val elements = runBlocking {
-                async(Dispatchers.IO) {
-                    autoSettingsList?.map { setting ->
-                        ButtonElement(setting.name, { Integer.MAX_VALUE }) {
-                            GlobalScope.launch {
-                                try {
-                                    displayChatMessage("Loading settings...")
-
-                                    // Load settings and apply them
-                                    val settings = ClientApi.requestSettingsScript(setting.settingId)
-
-                                    displayChatMessage("Applying settings...")
-                                    SettingsUtils.applyScript(settings)
-
-                                    displayChatMessage("§6Settings applied successfully")
-                                    HUD.addNotification(Notification("Updated Settings"))
-                                    mc.soundHandler.playSound(
-                                        PositionedSoundRecord.create(
-                                            ResourceLocation("random.anvil_use"), 1F
-                                        )
-                                    )
-                                } catch (e: Exception) {
-                                    ClientUtils.LOGGER.error("Failed to load settings", e)
-                                    displayChatMessage("Failed to load settings: ${e.message}")
-                                }
-                            }
-                        }.apply {
-                            this.hoverText = buildString {
-                                appendLine("§7Description: §e${setting.description.ifBlank { "No description available" }}")
-                                appendLine("§7Type: §e${setting.type.displayName}")
-                                appendLine("§7Contributors: §e${setting.contributors}")
-                                appendLine("§7Last updated: §e${setting.date}")
-                                append("§7Status: §e${setting.statusType.displayName} §a(${setting.statusDate})")
-                            }
-                        }
-                    } ?: emptyList()
-                }.await()
+                        chat("§6Settings applied successfully.")
+                        HUD.addNotification(Notification.informative("ClickGUI", "Updated Settings"))
+                        mc.playSound("random.anvil_use".asResourceLocation())
+                    } catch (e: Exception) {
+                        ClientUtils.LOGGER.error("Failed to load settings", e)
+                        chat("Failed to load settings: ${e.message}")
+                    }
+                }
+            }.apply {
+                this.hoverText = buildString {
+                    appendLine("§7Description: §e${setting.description.ifBlank { "No description available" }}")
+                    appendLine("§7Type: §e${setting.type.displayName}")
+                    appendLine("§7Contributors: §e${setting.contributors}")
+                    appendLine("§7Last updated: §e${setting.date}")
+                    append("§7Status: §e${setting.statusType.displayName} §a(${setting.statusDate})")
+                }
             }
+        } ?: run {
+            // Try load settings
+            loadSettings(useCached = true) {
+                mc.addScheduledTask {
+                    setupSettingsPanel(xPos, yPos, width, height)
+                }
+            }
+
+            emptyList()
         }
+
+        return Panel("Auto Settings", xPos, yPos, width, height, false, list)
+    }
 
     override fun drawScreen(x: Int, y: Int, partialTicks: Float) {
         // Enable DisplayList optimization
-        assumeNonVolatile = true
+        assumeNonVolatile {
+            mouseX = (x / scale).roundToInt()
+            mouseY = (y / scale).roundToInt()
 
-        mouseX = (x / scale).roundToInt()
-        mouseY = (y / scale).roundToInt()
+            drawDefaultBackground()
+            drawImage(hudIcon, 9, height - 41, 32, 32)
 
-        drawDefaultBackground()
-        drawImage(hudIcon, 9, height - 41, 32, 32)
+            val scale = scale.toDouble()
+            glScaled(scale, scale, scale)
 
-        val scale = scale.toDouble()
-        glScaled(scale, scale, scale)
+            for (panel in panels) {
+                panel.updateFade(deltaTime)
+                panel.drawScreenAndClick(mouseX, mouseY)
+            }
 
-        for (panel in panels) {
-            panel.updateFade(deltaTime)
-            panel.drawScreenAndClick(mouseX, mouseY)
-        }
+            descriptions@ for (panel in panels.reversed()) {
+                // Don't draw hover text when hovering over a panel header.
+                if (panel.isHovered(mouseX, mouseY)) break
 
-        descriptions@ for (panel in panels.reversed()) {
-            // Don't draw hover text when hovering over a panel header.
-            if (panel.isHovered(mouseX, mouseY)) break
-
-            for (element in panel.elements) {
-                if (element is ButtonElement) {
-                    if (element.isVisible && element.hoverText.isNotBlank() && element.isHovered(
-                            mouseX, mouseY
-                        ) && element.y <= panel.y + panel.fade
-                    ) {
-                        style.drawHoverText(mouseX, mouseY, element.hoverText)
-                        // Don't draw hover text for any elements below.
-                        break@descriptions
+                for (element in panel.elements) {
+                    if (element is ButtonElement) {
+                        if (element.isVisible && element.hoverText.isNotBlank() && element.isHovered(
+                                mouseX, mouseY
+                            ) && element.y <= panel.y + panel.fade
+                        ) {
+                            style.drawHoverText(mouseX, mouseY, element.hoverText)
+                            // Don't draw hover text for any elements below.
+                            break@descriptions
+                        }
                     }
                 }
             }
-        }
 
-        if (Mouse.hasWheel()) {
-            val wheel = Mouse.getDWheel()
-            if (wheel != 0) {
-                var handledScroll = false
+            if (Mouse.hasWheel()) {
+                val wheel = autoScrollY?.let { it - y } ?: Mouse.getDWheel()
 
-                // Handle foremost panel.
-                for (panel in panels.reversed()) {
-                    if (panel.handleScroll(mouseX, mouseY, wheel)) {
-                        handledScroll = true
-                        break
+                if (wheel != 0) {
+                    var handledScroll = false
+
+                    // Handle foremost panel.
+                    for (panel in panels.reversed()) {
+                        if (panel.handleScroll(mouseX, mouseY, wheel)) {
+                            handledScroll = true
+                            break
+                        }
                     }
+
+                    if (!handledScroll) handleScroll(wheel)
                 }
-
-                if (!handledScroll) handleScroll(wheel)
             }
+
+            disableLighting()
+            RenderHelper.disableStandardItemLighting()
+            glScaled(1.0, 1.0, 1.0)
         }
-
-        disableLighting()
-        RenderHelper.disableStandardItemLighting()
-        glScaled(1.0, 1.0, 1.0)
-
-        assumeNonVolatile = false
 
         super.drawScreen(mouseX, mouseY, partialTicks)
     }
@@ -240,6 +240,10 @@ object ClickGui : GuiScreen() {
             return
         }
 
+        if (mouseButton == 2) {
+            autoScrollY = y
+        }
+
         mouseX = (x / scale).roundToInt()
         mouseY = (y / scale).roundToInt()
 
@@ -255,18 +259,22 @@ object ClickGui : GuiScreen() {
                 panel.drag = true
 
                 // Move dragged panel to top.
-                panels.removeAt(panels.lastIndex - index)
+                panels.remove(panel)
                 panels += panel
                 return
             }
         }
     }
 
-    public override fun mouseReleased(x: Int, y: Int, state: Int) {
+    public override fun mouseReleased(x: Int, y: Int, button: Int) {
         mouseX = (x / scale).roundToInt()
         mouseY = (y / scale).roundToInt()
 
-        for (panel in panels) panel.mouseReleased(mouseX, mouseY, state)
+        if (button == 2) {
+            autoScrollY = null
+        }
+
+        for (panel in panels) panel.mouseReleased(mouseX, mouseY, button)
     }
 
     override fun updateScreen() {
@@ -285,18 +293,32 @@ object ClickGui : GuiScreen() {
 
     override fun keyTyped(typedChar: Char, keyCode: Int) {
         // Close ClickGUI by using its key bind.
-        if (keyCode == ClickGUI.keyBind) {
-            if (ignoreClosing) ignoreClosing = false
-            else mc.displayGuiScreen(null)
+        if (keyCode in arrayOf(ClickGUI.keyBind, Keyboard.KEY_ESCAPE)) {
+            if (style.chosenText != null) {
+                style.chosenText = null
+                return
+            }
 
-            return
+            if (keyCode != Keyboard.KEY_ESCAPE) {
+                if (ignoreClosing) {
+                    ignoreClosing = false
+                } else {
+                    mc.displayGuiScreen(null)
+                }
+
+                return
+            }
         }
+
+        style.chosenText?.processInput(typedChar, keyCode) { style.moveRGBAIndexBy(it) }
 
         super.keyTyped(typedChar, keyCode)
     }
 
     override fun onGuiClosed() {
+        autoScrollY = null
         saveConfig(clickGuiConfig)
+        Keyboard.enableRepeatEvents(false)
         for (panel in panels) panel.fade = 0
     }
 

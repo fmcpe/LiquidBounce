@@ -11,13 +11,13 @@ import net.ccbluex.liquidbounce.features.command.shortcuts.ShortcutParser
 import net.ccbluex.liquidbounce.features.command.special.*
 import net.ccbluex.liquidbounce.file.FileManager.saveConfig
 import net.ccbluex.liquidbounce.file.FileManager.shortcutsConfig
-import net.ccbluex.liquidbounce.utils.ClientUtils.displayChatMessage
+import net.ccbluex.liquidbounce.utils.client.chat
 
 object CommandManager {
     val commands = mutableListOf<Command>()
     var latestAutoComplete = emptyArray<String>()
 
-    var prefix = '.'
+    var prefix = "."
 
     /**
      * Register all default commands
@@ -54,7 +54,6 @@ object CommandManager {
         registerCommand(RemoteViewCommand)
         registerCommand(PrefixCommand)
         registerCommand(ShortcutCommand)
-        registerCommand(HideCommand)
         registerCommand(XrayCommand)
         registerCommand(LiquidChatCommand)
         registerCommand(PrivateChatCommand)
@@ -67,16 +66,20 @@ object CommandManager {
      * Execute command by given [input]
      */
     fun executeCommands(input: String) {
-        for (command in commands) {
-            val args = input.split(" ").toTypedArray()
+        if (!input.startsWith(prefix)) {
+            return
+        }
 
-            if (args[0].equals(prefix.toString() + command.command, ignoreCase = true)) {
+        val args = input.removePrefix(prefix).split(' ').toTypedArray()
+
+        for (command in commands) {
+            if (args[0].equals(command.command, ignoreCase = true)) {
                 command.execute(args)
                 return
             }
 
             for (alias in command.alias) {
-                if (!args[0].equals(prefix.toString() + alias, ignoreCase = true))
+                if (!args[0].equals(alias, ignoreCase = true))
                     continue
 
                 command.execute(args)
@@ -84,7 +87,7 @@ object CommandManager {
             }
         }
 
-        displayChatMessage("§cCommand not found. Type ${prefix}help to view all commands.")
+        chat("§cCommand not found. Type ${prefix}help to view all commands.")
     }
 
     /**
@@ -105,44 +108,37 @@ object CommandManager {
      * @author NurMarvin
      */
     private fun getCompletions(input: String): Array<String>? {
-        if (input.isNotEmpty() && input.toCharArray()[0] == prefix) {
-            val args = input.split(" ")
-
-            return if (args.size > 1) {
-                val command = getCommand(args[0].substring(1))
-                val tabCompletions = command?.tabComplete(args.drop(1).toTypedArray())
-
-                tabCompletions?.toTypedArray()
-            } else {
-                val rawInput = input.substring(1)
-                commands
-                    .filter {
-                        it.command.startsWith(rawInput, true)
-                            || it.alias.any { alias -> alias.startsWith(rawInput, true) }
-                    }
-                    .map {
-                        val alias = if (it.command.startsWith(rawInput, true))
-                            it.command
-                        else {
-                            it.alias.first { alias -> alias.startsWith(rawInput, true) }
-                        }
-
-                        prefix + alias
-                    }
-                    .toTypedArray()
-            }
+        if (!input.startsWith(prefix)) {
+            return null
         }
-        return null
+
+        val rawInput = input.removePrefix(prefix)
+
+        val args = rawInput.split(' ').toTypedArray()
+
+        return if (args.size > 1) {
+            val command = getCommand(args[0])
+            val tabCompletions = command?.tabComplete(args.copyOfRange(1, args.size))
+
+            tabCompletions?.toTypedArray()
+        } else {
+            commands.mapNotNull { command ->
+                val alias = when {
+                    command.command.startsWith(rawInput, true) -> command.command
+                    else -> command.alias.firstOrNull { alias -> alias.startsWith(rawInput, true) }
+                } ?: return@mapNotNull null
+
+                prefix + alias
+            }.toTypedArray()
+        }
     }
 
     /**
      * Get command instance by given [name]
      */
-    fun getCommand(name: String) =
-        commands.find {
-            it.command.equals(name, ignoreCase = true)
-                || it.alias.any { alias -> alias.equals(name, true) }
-        }
+    fun getCommand(name: String) = commands.find {
+        it.command.equals(name, ignoreCase = true) || it.alias.any { alias -> alias.equals(name, true) }
+    }
 
     /**
      * Register [command] by just adding it to the commands registry

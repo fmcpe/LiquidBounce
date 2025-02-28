@@ -5,64 +5,65 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.render
 
-import net.ccbluex.liquidbounce.event.EventTarget
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import net.ccbluex.liquidbounce.event.Render3DEvent
-import net.ccbluex.liquidbounce.event.UpdateEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.handler
+import net.ccbluex.liquidbounce.event.loopHandler
 import net.ccbluex.liquidbounce.features.module.Category
-import net.ccbluex.liquidbounce.utils.block.BlockUtils.getBlock
+import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.utils.block.BlockUtils.searchBlocks
-import net.ccbluex.liquidbounce.utils.render.ColorUtils.rainbow
+import net.ccbluex.liquidbounce.utils.block.block
+import net.ccbluex.liquidbounce.utils.block.id
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawBlockBox
-import net.ccbluex.liquidbounce.utils.timing.MSTimer
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.IntegerValue
-import net.ccbluex.liquidbounce.value.ListValue
 import net.minecraft.block.Block
-import net.minecraft.block.Block.getIdFromBlock
 import net.minecraft.init.Blocks.*
 import net.minecraft.util.BlockPos
 import java.awt.Color
-import java.util.LinkedList
 
-object BedProtectionESP : Module("BedProtectionESP", Category.RENDER, hideModule = false) {
-    private val targetBlock by ListValue("TargetBlock", arrayOf("Bed", "DragonEgg"), "Bed")
-    private val renderMode by ListValue("LayerRenderMode", arrayOf("Current", "All"), "Current")
-    private val radius by IntegerValue("Radius", 8, 0..32)
-    private val maxLayers by IntegerValue("MaxProtectionLayers", 2, 1..6)
-    private val blockLimit by IntegerValue("BlockLimit", 256, 0..1024)
-    private val down by BoolValue("BlocksUnderTarget", false)
-    private val renderTargetBlocks by BoolValue("RenderTargetBlocks", true)
+object BedProtectionESP : Module("BedProtectionESP", Category.RENDER) {
+    private val targetBlock by choices("TargetBlock", arrayOf("Bed", "DragonEgg"), "Bed")
+    private val renderMode by choices("LayerRenderMode", arrayOf("Current", "All"), "Current")
+    private val radius by int("Radius", 8, 0..32)
+    private val maxLayers by int("MaxProtectionLayers", 2, 1..6)
+    private val blockLimit by int("BlockLimit", 256, 0..1024)
+    private val down by boolean("BlocksUnderTarget", false)
+    private val renderTargetBlocks by boolean("RenderTargetBlocks", true)
 
-    private val colorRainbow by BoolValue("Rainbow", false)
-        private val colorRed by IntegerValue("R", 96, 0..255) { !colorRainbow }
-        private val colorGreen by IntegerValue("G", 96, 0..255) { !colorRainbow }
-        private val colorBlue by IntegerValue("B", 96, 0..255) { !colorRainbow }
+    private val color by color("Color", Color(96, 96, 96))
 
-    private val searchTimer = MSTimer()
-    private val targetBlockList = mutableListOf<BlockPos>()
-    private val blocksToRender = mutableSetOf<BlockPos>()
-    private var thread: Thread? = null
+    @Volatile
+    private var targetBlocks = emptySet<BlockPos>()
 
-    private val breakableBlockIDs = arrayOf(35, 24, 159, 121, 20, 5, 49) // wool, sandstone, stained_clay, end_stone, glass, wood, obsidian
+    @Volatile
+    private var blocksToRender = emptySet<BlockPos>()
 
-    private fun getBlocksToRender(targetBlock: Block, maxLayers: Int, down: Boolean, allLayers: Boolean, blockLimit: Int) {
-        val targetBlockID = getIdFromBlock(targetBlock)
+    private val breakableBlockIDs =
+        arrayOf(35, 24, 159, 121, 20, 5, 49) // wool, sandstone, stained_clay, end_stone, glass, wood, obsidian
+
+    private fun getBlocksToRender(
+        targetBlock: Block,
+        maxLayers: Int,
+        down: Boolean,
+        allLayers: Boolean,
+        blockLimit: Int
+    ): Set<BlockPos> {
+        val result = hashSetOf<BlockPos>()
+        val targetBlockID = targetBlock.id
 
         val nextLayerAirBlocks = mutableSetOf<BlockPos>()
         val nextLayerBlocks = mutableSetOf<BlockPos>()
         val cachedBlocks = mutableSetOf<BlockPos>()
-        val currentLayerBlocks = LinkedList<BlockPos>()
+        val currentLayerBlocks = ArrayDeque<BlockPos>()
         var currentLayer = 1
 
-
         // get blocks around each target block
-        for (block in targetBlockList) {
+        for (block in targetBlocks) {
             currentLayerBlocks.add(block)
 
             while (currentLayerBlocks.isNotEmpty()) {
                 val currBlock = currentLayerBlocks.removeFirst()
-                val currBlockID = getIdFromBlock(getBlock(currBlock))
+                val currBlockID = currBlock.block?.id ?: 0
 
                 // it's not necessary to make protection layers around unbreakable blocks
                 if (breakableBlockIDs.contains(currBlockID) || (currBlockID == targetBlockID) || (allLayers && currBlockID == 0)) {
@@ -78,16 +79,13 @@ object BedProtectionESP : Module("BedProtectionESP", Category.RENDER, hideModule
                         blocksAround.add(currBlock.down())
                     }
 
-                    nextLayerAirBlocks.addAll(
-                        blocksAround.filter { blockPos -> getBlock(blockPos) == air }
-                    )
-                    nextLayerBlocks.addAll(
-                        blocksAround.filter { blockPos ->
-                            (allLayers || getBlock(blockPos) != air) && !cachedBlocks.contains(
-                                blockPos
-                            )
-                        }
-                    )
+                    blocksAround.filterTo(nextLayerAirBlocks) { blockPos -> blockPos.block == air }
+
+                    blocksAround.filterTo(nextLayerBlocks) { blockPos ->
+                        (allLayers || blockPos.block != air) && !cachedBlocks.contains(
+                            blockPos
+                        )
+                    }
                 }
 
                 // move to the next layer
@@ -104,64 +102,48 @@ object BedProtectionESP : Module("BedProtectionESP", Category.RENDER, hideModule
             currentLayer = 1
 
             for (newBlock in nextLayerAirBlocks) {
-                if (blocksToRender.size >= blockLimit) {
-                    return
+                if (result.size >= blockLimit) {
+                    return result
                 }
-                blocksToRender += newBlock
+
+                result += newBlock
             }
 
             nextLayerAirBlocks.clear()
         }
+
+        return result
     }
 
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
-        if (searchTimer.hasTimePassed(1000) && (thread?.isAlive != true)) {
-            val radius = radius
-            val targetBlock = if (targetBlock == "Bed") bed else dragon_egg
-            val maxLayers = maxLayers
-            val down = down
-            val allLayers = renderMode == "All"
-            val blockLimit = blockLimit
+    val onSearch = loopHandler(dispatcher = Dispatchers.Default) {
+        val radius = radius
+        val targetBlock = if (targetBlock == "Bed") bed else dragon_egg
+        val maxLayers = maxLayers
+        val down = down
+        val allLayers = renderMode == "All"
+        val blockLimit = blockLimit
 
-            thread = Thread({
-                val blocks = searchBlocks(radius, setOf(targetBlock), 32)
-                searchTimer.reset()
+        targetBlocks = searchBlocks(radius, setOf(targetBlock), 32).keys
+        blocksToRender = getBlocksToRender(targetBlock, maxLayers, down, allLayers, blockLimit)
 
-                synchronized(targetBlockList) {
-                    targetBlockList.clear()
-                    targetBlockList += blocks.keys
-                }
-                synchronized(blocksToRender) {
-                    blocksToRender.clear()
-                    getBlocksToRender(targetBlock, maxLayers, down, allLayers, blockLimit)
-                }
-            }, "BedProtectionESP-BlockFinder")
-
-            thread!!.start()
-        }
+        delay(1000)
     }
 
-    @EventTarget
-    fun onRender3D(event: Render3DEvent) {
+    val onRender3D = handler<Render3DEvent> {
         if (renderTargetBlocks) {
-            synchronized(targetBlockList) {
-                for (blockPos in targetBlockList) {
-                    drawBlockBox(blockPos, Color.RED, true)
-                }
+            for (blockPos in targetBlocks) {
+                drawBlockBox(blockPos, Color.RED, true)
             }
         }
-        synchronized(blocksToRender) {
-            val color = if (colorRainbow) rainbow() else Color(colorRed, colorGreen, colorBlue)
-            for (blockPos in blocksToRender) {
-                drawBlockBox(blockPos, color, true)
-            }
+
+        for (blockPos in blocksToRender) {
+            drawBlockBox(blockPos, color, true)
         }
     }
 
-    override fun onToggle(state: Boolean) {
-        targetBlockList.clear()
-        blocksToRender.clear()
+    override fun onDisable() {
+        targetBlocks = emptySet()
+        blocksToRender = emptySet()
     }
 
     override val tag: String

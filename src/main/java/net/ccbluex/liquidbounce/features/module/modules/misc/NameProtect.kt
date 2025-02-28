@@ -6,50 +6,38 @@
 package net.ccbluex.liquidbounce.features.module.modules.misc
 
 import net.ccbluex.liquidbounce.LiquidBounce.CLIENT_NAME
-import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.PacketEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.Category
+import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.file.FileManager.friendsConfig
 import net.ccbluex.liquidbounce.utils.render.ColorUtils.translateAlternateColorCodes
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.IntegerValue
-import net.ccbluex.liquidbounce.value.TextValue
 import net.minecraft.network.play.server.S01PacketJoinGame
 import net.minecraft.network.play.server.S40PacketDisconnect
-import kotlin.random.Random
 import java.util.*
 
-object NameProtect : Module("NameProtect", Category.MISC, subjective = true, gameDetecting = false, hideModule = false) {
+object NameProtect : Module("NameProtect", Category.MISC, subjective = true, gameDetecting = false) {
 
-    val allPlayers by BoolValue("AllPlayers", false)
+    val allPlayers by boolean("AllPlayers", false)
 
-    val skinProtect by BoolValue("SkinProtect", true)
-    private val fakeName by TextValue("FakeName", "&cMe")
+    val skinProtect by boolean("SkinProtect", true)
+    private val fakeName by text("FakeName", "&cMe")
 
-    private val randomNames by BoolValue("RandomNames", false) { allPlayers }
-    private val randomNameLength by BoolValue("RandomNameLength", false) { allPlayers && randomNames }
+    private val randomNames by boolean("RandomNames", false) { allPlayers }
+    private val randomNameLength by boolean("RandomNameLength", false) { allPlayers && randomNames }
 
-    private var nameLength by IntegerValue("NameLength", 6, 6..16) {
+    private var nameLength by int("NameLength", 6, 6..16) {
         randomNames && allPlayers && !randomNameLength
     }
 
-    private val minNameLength: IntegerValue = object : IntegerValue("MinNameLength", 6, 6..16) {
-        override fun isSupported() = allPlayers && randomNames && randomNameLength
-        override fun onChange(oldValue: Int, newValue: Int) = newValue.coerceAtMost(maxNameLength.get())
-    }
-
-    private val maxNameLength: IntegerValue = object : IntegerValue("MaxNameLength", 14, 6..16) {
-        override fun isSupported() = allPlayers && randomNames && randomNameLength
-        override fun onChange(oldValue: Int, newValue: Int) = newValue.coerceAtLeast(minNameLength.get())
-    }
+    private val nameLengthRange by intRange("NameLengthRange", 6..14, 6..16)
+    { allPlayers && randomNames && randomNameLength }
 
     private val playerRandomNames = mutableMapOf<UUID, Pair<String, Int>>()
-    private val characters =  ('a'..'z') + ('0'..'9') + ('A'..'Z') + "_"
+    private val characters = ('a'..'z') + ('0'..'9') + ('A'..'Z') + "_"
 
     private var savedName = -1
-    private var savedMinName = -1
-    private var savedMaxName = -1
+    private var savedLength: IntRange? = null
 
     override fun onEnable() {
         if (!allPlayers) {
@@ -65,8 +53,7 @@ object NameProtect : Module("NameProtect", Category.MISC, subjective = true, gam
 
         // Saving other player random changed name length
         if (randomNameLength) {
-            savedMinName = minNameLength.get()
-            savedMaxName = maxNameLength.get()
+            savedLength = nameLengthRange
         }
     }
 
@@ -74,12 +61,10 @@ object NameProtect : Module("NameProtect", Category.MISC, subjective = true, gam
         playerRandomNames.clear()
     }
 
-    @EventTarget
-    fun onPacket(event: PacketEvent) {
+    val onPacket = handler<PacketEvent> { event ->
         val packet = event.packet
 
-        if (mc.thePlayer == null || mc.theWorld == null)
-            return
+        if (mc.thePlayer == null || mc.theWorld == null) return@handler
 
         // Check for new players
         if (packet is S01PacketJoinGame) {
@@ -114,10 +99,7 @@ object NameProtect : Module("NameProtect", Category.MISC, subjective = true, gam
             for (playerInfo in mc.netHandler.playerInfoMap) {
                 val playerUUID = playerInfo.gameProfile.id
 
-                val randomMinLength = Random.nextInt(minNameLength.get(), maxNameLength.get() + 1)
-                val randomMaxLength = Random.nextInt(randomMinLength, maxNameLength.get() + 1)
-
-                val randomLength = Random.nextInt(randomMinLength, randomMaxLength + 1)
+                val randomLength = nameLengthRange.random()
                 val randomizeName = (1..randomLength).joinToString("") { characters.random().toString() }
 
                 playerRandomNames[playerUUID] = randomizeName to randomLength
@@ -166,11 +148,10 @@ object NameProtect : Module("NameProtect", Category.MISC, subjective = true, gam
                     newText = newText.replace(Regex(escapedName), protectedUsername)
 
                     // Update all other player names when nameLength & min/maxNameLength value are changed
-                    if (savedName != nameLength || savedMinName != minNameLength.get() || savedMaxName != maxNameLength.get()) {
+                    if (savedName != nameLength || savedLength != nameLengthRange) {
                         generateRandomNames()
                         savedName = nameLength
-                        savedMinName = minNameLength.get()
-                        savedMaxName = maxNameLength.get()
+                        savedLength = nameLengthRange
                     }
 
                 } else {
@@ -187,20 +168,10 @@ object NameProtect : Module("NameProtect", Category.MISC, subjective = true, gam
      * Handle new players name
      */
     private fun handleNewPlayer(playerUUID: UUID) {
-
         if (allPlayers && randomNames) {
-            if (randomNameLength) {
-                val randomMinLength = Random.nextInt(minNameLength.get(), maxNameLength.get() + 1)
-                val randomMaxLength = Random.nextInt(randomMinLength, maxNameLength.get() + 1)
-
-                val randomLength = Random.nextInt(randomMinLength, randomMaxLength + 1)
-                val randomizeName = (1..randomLength).joinToString("") { characters.random().toString() }
-
-                playerRandomNames[playerUUID] = randomizeName to randomLength
-            } else {
-                val randomizeName = (1..nameLength).joinToString("") { characters.random().toString() }
-                playerRandomNames[playerUUID] = randomizeName to nameLength
-            }
+            val length = if (randomNameLength) nameLengthRange.random() else nameLength
+            val randomizeName = (1..length).joinToString("") { characters.random().toString() }
+            playerRandomNames[playerUUID] = randomizeName to length
         }
     }
 

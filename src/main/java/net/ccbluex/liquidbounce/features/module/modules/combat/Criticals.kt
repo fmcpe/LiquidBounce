@@ -6,35 +6,41 @@
 package net.ccbluex.liquidbounce.features.module.modules.combat
 
 import net.ccbluex.liquidbounce.event.AttackEvent
-import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.PacketEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.Category
+import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.modules.movement.Fly
-import net.ccbluex.liquidbounce.utils.PacketUtils.sendPackets
-import net.ccbluex.liquidbounce.utils.extensions.component1
-import net.ccbluex.liquidbounce.utils.extensions.component2
-import net.ccbluex.liquidbounce.utils.extensions.component3
-import net.ccbluex.liquidbounce.utils.extensions.tryJump
+import net.ccbluex.liquidbounce.utils.client.PacketUtils.sendPackets
+import net.ccbluex.liquidbounce.utils.extensions.*
 import net.ccbluex.liquidbounce.utils.timing.MSTimer
-import net.ccbluex.liquidbounce.value.FloatValue
-import net.ccbluex.liquidbounce.value.IntegerValue
-import net.ccbluex.liquidbounce.value.ListValue
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.network.play.client.C03PacketPlayer
 import net.minecraft.network.play.client.C03PacketPlayer.C04PacketPlayerPosition
 
-object Criticals : Module("Criticals", Category.COMBAT, hideModule = false) {
+object Criticals : Module("Criticals", Category.COMBAT) {
 
-    val mode by ListValue(
+    val mode by choices(
         "Mode",
-        arrayOf("Packet", "NCPPacket", "BlocksMC", "BlocksMC2", "NoGround", "Hop", "TPHop", "Jump", "LowJump", "CustomMotion", "Visual"),
+        arrayOf(
+            "Packet",
+            "NCPPacket",
+            "BlocksMC",
+            "BlocksMC2",
+            "NoGround",
+            "Hop",
+            "TPHop",
+            "Jump",
+            "LowJump",
+            "CustomMotion",
+            "Visual"
+        ),
         "Packet"
     )
 
-    val delay by IntegerValue("Delay", 0, 0..500)
-    private val hurtTime by IntegerValue("HurtTime", 10, 0..10)
-    private val customMotionY by FloatValue("Custom-Y", 0.2f, 0.01f..0.42f) { mode == "CustomMotion" }
+    val delay by int("Delay", 0, 0..500)
+    private val hurtTime by int("HurtTime", 10, 0..10)
+    private val customMotionY by float("Custom-Y", 0.2f, 0.01f..0.42f) { mode == "CustomMotion" }
 
     val msTimer = MSTimer()
 
@@ -43,17 +49,16 @@ object Criticals : Module("Criticals", Category.COMBAT, hideModule = false) {
             mc.thePlayer.tryJump()
     }
 
-    @EventTarget
-    fun onAttack(event: AttackEvent) {
+    val onAttack = handler<AttackEvent> { event ->
         if (event.targetEntity is EntityLivingBase) {
-            val thePlayer = mc.thePlayer ?: return
+            val thePlayer = mc.thePlayer ?: return@handler
             val entity = event.targetEntity
 
-            if (!thePlayer.onGround || thePlayer.isOnLadder || thePlayer.isInWeb || thePlayer.isInWater ||
-                thePlayer.isInLava || thePlayer.ridingEntity != null || entity.hurtTime > hurtTime ||
+            if (!thePlayer.onGround || thePlayer.isOnLadder || thePlayer.isInWeb || thePlayer.isInLiquid ||
+                thePlayer.ridingEntity != null || entity.hurtTime > hurtTime ||
                 Fly.handleEvents() || !msTimer.hasTimePassed(delay)
             )
-                return
+                return@handler
 
             val (x, y, z) = thePlayer
 
@@ -115,8 +120,7 @@ object Criticals : Module("Criticals", Category.COMBAT, hideModule = false) {
         }
     }
 
-    @EventTarget
-    fun onPacket(event: PacketEvent) {
+    val onPacket = handler<PacketEvent> { event ->
         val packet = event.packet
 
         if (packet is C03PacketPlayer && mode == "NoGround")

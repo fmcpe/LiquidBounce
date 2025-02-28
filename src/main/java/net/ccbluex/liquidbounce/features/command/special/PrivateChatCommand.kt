@@ -2,7 +2,7 @@ package net.ccbluex.liquidbounce.features.command.special
 
 import net.ccbluex.liquidbounce.features.command.Command
 import net.ccbluex.liquidbounce.features.module.modules.misc.LiquidChat
-import net.ccbluex.liquidbounce.utils.misc.StringUtils
+import net.ccbluex.liquidbounce.utils.kotlin.StringUtils
 
 object PrivateChatCommand : Command("pchat", "privatechat", "lcpm") {
 
@@ -17,7 +17,7 @@ object PrivateChatCommand : Command("pchat", "privatechat", "lcpm") {
             }
 
             if (!LiquidChat.client.isConnected()) {
-                chat("§cError: §LiquidChat is currently not connected to the server!")
+                chat("§cError: §7LiquidChat is currently not connected to the server!")
                 return
             }
 

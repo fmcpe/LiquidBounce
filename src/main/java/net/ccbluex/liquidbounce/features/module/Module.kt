@@ -6,50 +6,60 @@
 package net.ccbluex.liquidbounce.features.module
 
 import net.ccbluex.liquidbounce.LiquidBounce.isStarting
+import net.ccbluex.liquidbounce.config.Configurable
 import net.ccbluex.liquidbounce.event.Listenable
 import net.ccbluex.liquidbounce.features.module.modules.misc.GameDetector
 import net.ccbluex.liquidbounce.file.FileManager.modulesConfig
 import net.ccbluex.liquidbounce.file.FileManager.saveConfig
+import net.ccbluex.liquidbounce.file.FileManager.valuesConfig
 import net.ccbluex.liquidbounce.lang.translation
+import net.ccbluex.liquidbounce.ui.client.hud.HUD
 import net.ccbluex.liquidbounce.ui.client.hud.HUD.addNotification
 import net.ccbluex.liquidbounce.ui.client.hud.element.elements.Arraylist
 import net.ccbluex.liquidbounce.ui.client.hud.element.elements.Notification
-import net.ccbluex.liquidbounce.utils.MinecraftInstance
+import net.ccbluex.liquidbounce.ui.client.hud.element.elements.Notifications
+import net.ccbluex.liquidbounce.utils.client.ClientUtils.LOGGER
+import net.ccbluex.liquidbounce.utils.client.MinecraftInstance
+import net.ccbluex.liquidbounce.utils.client.asResourceLocation
+import net.ccbluex.liquidbounce.utils.client.chat
+import net.ccbluex.liquidbounce.utils.client.playSound
 import net.ccbluex.liquidbounce.utils.extensions.toLowerCamelCase
-import net.ccbluex.liquidbounce.utils.misc.RandomUtils.nextFloat
-import net.ccbluex.liquidbounce.utils.timing.TickedActions.TickScheduler
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.Value
-import net.minecraft.client.audio.PositionedSoundRecord
-import net.minecraft.util.ResourceLocation
+import net.ccbluex.liquidbounce.utils.kotlin.RandomUtils.nextFloat
+import net.ccbluex.liquidbounce.utils.timing.TickedActions.clearTicked
 import org.lwjgl.input.Keyboard
 
-open class Module constructor(
+private val SPLIT_REGEX = "(?<=[a-z])(?=[A-Z])".toRegex()
 
-    val name: String,
+open class Module(
+    name: String,
     val category: Category,
     defaultKeyBind: Int = Keyboard.KEY_NONE,
-    val defaultInArray: Boolean = true, // Used in HideCommand to reset modules visibility.
     private val canBeEnabled: Boolean = true,
     private val forcedDescription: String? = null,
 
     // Adds spaces between lowercase and uppercase letters (KillAura -> Kill Aura)
-    val spacedName: String = name.split("(?<=[a-z])(?=[A-Z])".toRegex()).joinToString(separator = " "),
-    val subjective: Boolean = category == Category.RENDER,
+    val spacedName: String = name.splitToSequence(SPLIT_REGEX).joinToString(separator = " "),
+    subjective: Boolean = category == Category.RENDER,
     val gameDetecting: Boolean = canBeEnabled,
-    val hideModule: Boolean = false
+    defaultState: Boolean = false,
+    defaultHidden: Boolean = false,
+) : Configurable(name), MinecraftInstance, Listenable {
 
-) : MinecraftInstance(), Listenable {
+    init {
+        if (subjective) {
+            subjective()
+        }
+    }
 
     // Value that determines whether the module should depend on GameDetector
-    private val onlyInGameValue = BoolValue("OnlyInGame", true, subjective = true) { GameDetector.state }
-
-    protected val TickScheduler = TickScheduler(this)
+    private val onlyInGameValue = boolean("OnlyInGame", true) {
+        GameDetector.state
+    }.subjective().excludeWhen(!gameDetecting)
 
     // Module information
 
     // Get normal or spaced name
-    fun getName(spaced: Boolean = Arraylist.spacedModules) = if (spaced) spacedName else name
+    fun getName(spaced: Boolean = Arraylist.spacedModulesValue.get()) = if (spaced) spacedName else name
 
     var keyBind = defaultKeyBind
         set(keyBind) {
@@ -58,25 +68,22 @@ open class Module constructor(
             saveConfig(modulesConfig)
         }
 
-    val hideModuleValue: BoolValue = object : BoolValue("Hide", false, subjective = true) {
-        override fun onUpdate(value: Boolean) {
-            inArray = !value
-        }
+    var isHidden: Boolean by boolean("Hide", defaultHidden).subjective().onChanged {
+        saveConfig(modulesConfig)
     }
 
-    // Use for synchronizing
-    val hideModuleValues: BoolValue = object : BoolValue("HideSync", hideModuleValue.get(), subjective = true) {
-        override fun onUpdate(value: Boolean) {
-            hideModuleValue.set(value)
+    private val resetValue = boolean("Reset", false).subjective().onChange { _, _ ->
+        try {
+            values.forEach { if (it !== this) it.resetValue() else return@forEach }
+        } catch (any: Exception) {
+            LOGGER.error("Failed to reset all values", any)
+            chat("Failed to reset all values: ${any.message}")
+        } finally {
+            addNotification(Notification(this.spacedName, "Successfully reset settings"))
+            saveConfig(valuesConfig)
         }
+        return@onChange false
     }
-
-    var inArray = defaultInArray
-        set(value) {
-            field = value
-
-            saveConfig(modulesConfig)
-        }
 
     val description
         get() = forcedDescription ?: translation("module.${name.toLowerCamelCase()}.description")
@@ -84,28 +91,47 @@ open class Module constructor(
     var slideStep = 0F
 
     // Current state of module
-    var state = false
+    var state = defaultState
         set(value) {
-            if (field == value)
-                return
+            if (field == value) return
 
             // Call toggle
             onToggle(value)
 
-            TickScheduler.clear()
+            // Clear ticked actions
+            clearTicked()
 
             // Play sound and add notification
             if (!isStarting) {
-                mc.soundHandler.playSound(PositionedSoundRecord.create(ResourceLocation("random.click"), 1F))
-                addNotification(Notification(translation("notification.module" + if (value) "Enabled" else "Disabled", getName())))
+                try {
+                    val state = if (value) {
+                        "Enabled" to Notifications.SeverityType.SUCCESS
+                    } else {
+                        "Disabled" to Notifications.SeverityType.RED_SUCCESS
+                    }
+
+                    val texts = translation("notification.module${state.first}", getName()).split(" ")
+                    val (title, description) = texts[0] to texts[1]
+
+                    mc.playSound("random.click".asResourceLocation())
+                    HUD.notifications.find { it.title != title && it.description == description }.let {
+                        if (it == null || it.fadeState.ordinal > 1) {
+                            addNotification(Notification(title, description, severityType = state.second))
+                            return@let
+                        }
+
+                        it.replaceModuleNotification(title, description, state.second)
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
             }
 
             // Call on enabled or disabled
             if (value) {
                 onEnable()
 
-                if (canBeEnabled)
-                    field = true
+                if (canBeEnabled) field = true
             } else {
                 onDisable()
                 field = false
@@ -114,7 +140,6 @@ open class Module constructor(
             // Save module state
             saveConfig(modulesConfig)
         }
-
 
     // HUD
     val hue = nextFloat()
@@ -150,30 +175,12 @@ open class Module constructor(
     /**
      * Get value by [valueName]
      */
-    open fun getValue(valueName: String) = values.find { it.name.equals(valueName, ignoreCase = true) }
+    fun getValue(valueName: String) = values.find { it.name.equals(valueName, ignoreCase = true) }
 
     /**
      * Get value via `module[valueName]`
      */
     operator fun get(valueName: String) = getValue(valueName)
-
-    /**
-     * Get all values of module with unique names
-     */
-    open val values
-        get() = javaClass.declaredFields
-            .map { field ->
-                field.isAccessible = true
-                field[this]
-            }.filterIsInstance<Value<*>>().toMutableList()
-            .also {
-                if (gameDetecting)
-                    it.add(onlyInGameValue)
-
-                if (!hideModule)
-                    it.add(hideModuleValue)
-            }
-            .distinctBy { it.name }
 
     val isActive
         get() = !gameDetecting || !onlyInGameValue.get() || GameDetector.isInGame()

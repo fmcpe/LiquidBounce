@@ -5,9 +5,9 @@
  */
 package net.ccbluex.liquidbounce.ui.client.clickgui.elements
 
-import net.ccbluex.liquidbounce.utils.MinecraftInstance
+import net.ccbluex.liquidbounce.utils.client.MinecraftInstance
 
-abstract class Element : MinecraftInstance() {
+abstract class Element : MinecraftInstance {
 
     var x = 0
     var y = 0
@@ -23,7 +23,7 @@ abstract class Element : MinecraftInstance() {
     abstract fun drawScreenAndClick(mouseX: Int, mouseY: Int, mouseButton: Int? = null): Boolean
     open fun mouseClicked(mouseX: Int, mouseY: Int, mouseButton: Int) = isHovered(mouseX, mouseY)
 
-    open fun mouseReleased(mouseX: Int, mouseY: Int, state: Int) = isHovered(mouseX, mouseY)
+    open fun mouseReleased(mouseX: Int, mouseY: Int, button: Int) = isHovered(mouseX, mouseY)
 
     fun isHovered(mouseX: Int, mouseY: Int) = isVisible && mouseX in x..x + width && mouseY in y..y + height
 }

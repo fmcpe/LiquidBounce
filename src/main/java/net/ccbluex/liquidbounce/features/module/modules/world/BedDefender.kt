@@ -5,26 +5,27 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.world
 
-import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.Render3DEvent
-import net.ccbluex.liquidbounce.event.UpdateEvent
+import net.ccbluex.liquidbounce.event.handler
+import net.ccbluex.liquidbounce.event.loopHandler
 import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.utils.CPSCounter
-import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
-import net.ccbluex.liquidbounce.utils.Rotation
-import net.ccbluex.liquidbounce.utils.RotationUtils
-import net.ccbluex.liquidbounce.utils.RotationUtils.getVectorForRotation
-import net.ccbluex.liquidbounce.utils.block.BlockUtils.isFullBlock
+import net.ccbluex.liquidbounce.utils.attack.CPSCounter
+import net.ccbluex.liquidbounce.utils.block.BlockUtils.isBlockBBValid
+import net.ccbluex.liquidbounce.utils.block.center
+import net.ccbluex.liquidbounce.utils.client.PacketUtils.sendPacket
 import net.ccbluex.liquidbounce.utils.extensions.*
 import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils
-import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils.serverSlot
+import net.ccbluex.liquidbounce.utils.inventory.SilentHotbar
+import net.ccbluex.liquidbounce.utils.inventory.inventorySlot
 import net.ccbluex.liquidbounce.utils.render.RenderUtils
+import net.ccbluex.liquidbounce.utils.rotation.Rotation
+import net.ccbluex.liquidbounce.utils.rotation.RotationSettings
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils.getVectorForRotation
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils.setTargetRotation
 import net.ccbluex.liquidbounce.utils.timing.MSTimer
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.FloatValue
-import net.ccbluex.liquidbounce.value.IntegerValue
-import net.ccbluex.liquidbounce.value.ListValue
+import net.ccbluex.liquidbounce.utils.timing.TickedActions.nextTick
 import net.minecraft.block.BlockBush
 import net.minecraft.client.settings.GameSettings
 import net.minecraft.init.Blocks
@@ -39,63 +40,31 @@ import net.minecraft.util.Vec3
 import net.minecraftforge.event.ForgeEventFactory
 import java.awt.Color
 
-object BedDefender : Module("BedDefender", Category.WORLD, hideModule = false) {
+object BedDefender : Module("BedDefender", Category.WORLD) {
 
-    private val rotations by BoolValue("Rotations", true)
+    private val autoBlock by choices("AutoBlock", arrayOf("Off", "Pick", "Spoof", "Switch"), "Spoof")
+    private val swing by boolean("Swing", true)
+    private val placeDelay by int("PlaceDelay", 500, 0..1000)
+    private val raycastMode by choices(
+        "Raycast",
+        arrayOf("None", "Normal", "Around"),
+        "Normal"
+    ) { options.rotationsActive }
+    private val scannerMode by choices("Scanner", arrayOf("Nearest", "Random"), "Nearest")
 
-    private val autoBlock by ListValue("AutoBlock", arrayOf("Off", "Pick", "Spoof", "Switch"), "Spoof")
-    private val swing by BoolValue("Swing", true)
-    private val placeDelay by IntegerValue("PlaceDelay", 500, 0..1000)
-    private val raycastMode by ListValue("Raycast", arrayOf("None", "Normal", "Around"), "Normal") { rotations }
-    private val scannerMode by ListValue("Scanner", arrayOf("Nearest", "Random"), "Nearest")
+    private val options = RotationSettings(this)
 
-    private val strafe by ListValue("Strafe", arrayOf("Off", "Strict", "Silent"), "Off") { rotations }
-    private val smootherMode by ListValue("SmootherMode", arrayOf("Linear", "Relative"), "Relative") { rotations }
-    private val keepRotation by BoolValue("KeepRotation", true) { rotations }
-    private val keepTicks by object : IntegerValue("KeepTicks", 1, 1..20) {
-        override fun onChange(oldValue: Int, newValue: Int) = newValue.coerceAtLeast(minimum)
-        override fun isSupported() = rotations && keepRotation
-    }
-
-    private val simulateShortStop by BoolValue("SimulateShortStop", false) { rotations }
-    private val startRotatingSlow by BoolValue("StartRotatingSlow", false) { rotations }
-    private val slowDownOnDirectionChange by BoolValue("SlowDownOnDirectionChange", false) { rotations }
-    private val useStraightLinePath by BoolValue("UseStraightLinePath", true) { rotations }
-    private val maxHorizontalSpeedValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minHorizontalSpeed)
-        override fun isSupported() = rotations
-
-    }
-    private val maxHorizontalSpeed by maxHorizontalSpeedValue
-
-    private val minHorizontalSpeed: Float by object : FloatValue("MinHorizontalSpeed", 180f, 1f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxHorizontalSpeed)
-        override fun isSupported() = !maxHorizontalSpeedValue.isMinimal() && rotations
-    }
-
-    private val maxVerticalSpeedValue = object : FloatValue("MaxVerticalSpeed", 180f, 1f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minVerticalSpeed)
-    }
-    private val maxVerticalSpeed by maxVerticalSpeedValue
-
-    private val minVerticalSpeed: Float by object : FloatValue("MinVerticalSpeed", 180f, 1f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxVerticalSpeed)
-        override fun isSupported() = !maxVerticalSpeedValue.isMinimal() && rotations
-    }
-
-    private val angleThresholdUntilReset by FloatValue("AngleThresholdUntilReset", 5f, 0.1f..180f) { rotations }
-
-    private val onSneakOnly by BoolValue("OnSneakOnly", true)
-    private val autoSneak by ListValue("AutoSneak", arrayOf("Off", "Normal", "Packet"), "Off") { !onSneakOnly }
-    private val trackCPS by BoolValue("TrackCPS", false)
-    private val mark by BoolValue("Mark", false)
+    private val onSneakOnly by boolean("OnSneakOnly", true)
+    private val autoSneak by choices("AutoSneak", arrayOf("Off", "Normal", "Packet"), "Off") { !onSneakOnly }
+    private val trackCPS by boolean("TrackCPS", false)
+    private val mark by boolean("Mark", false)
 
     private val defenceBlocks = mutableListOf<BlockPos>()
     private val bedTopPositions = mutableListOf<BlockPos>()
     private val bedBottomPositions = mutableListOf<BlockPos>()
 
     private val timerCounter = MSTimer()
-    private var blockPosition: BlockPos ?= null
+    private var blockPosition: BlockPos? = null
 
     override fun onDisable() {
         val player = mc.thePlayer ?: return
@@ -109,20 +78,14 @@ object BedDefender : Module("BedDefender", Category.WORLD, hideModule = false) {
         defenceBlocks.clear()
         bedTopPositions.clear()
         bedBottomPositions.clear()
-
-        TickScheduler += {
-            serverSlot = player.inventory.currentItem
-        }
     }
 
-    // TODO: Proper event to update.
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
-        val player = mc.thePlayer ?: return
-        val world = mc.theWorld ?: return
+    val onUpdate = loopHandler {
+        val player = mc.thePlayer ?: return@loopHandler
+        val world = mc.theWorld ?: return@loopHandler
 
         if (onSneakOnly && !mc.gameSettings.keyBindSneak.isKeyDown) {
-            return
+            return@loopHandler
         }
 
         val radius = 4
@@ -142,7 +105,7 @@ object BedDefender : Module("BedDefender", Category.WORLD, hideModule = false) {
                     val block = world.getBlockState(blockPos).block
                     if (block == Blocks.bed) {
                         val metadata = block.getMetaFromState(world.getBlockState(blockPos))
-                        
+
                         if (metadata >= 8) {
                             bedTopPositions.add(blockPos)
                         } else {
@@ -157,32 +120,21 @@ object BedDefender : Module("BedDefender", Category.WORLD, hideModule = false) {
         addDefenceBlocks(bedBottomPositions)
 
         if (defenceBlocks.isNotEmpty()) {
-            val playerPos = player.position ?: return
-            val pos = if (scannerMode == "Nearest") defenceBlocks.minByOrNull { it.distanceSq(playerPos) } ?: return else defenceBlocks.random()
+            val playerPos = player.position ?: return@loopHandler
+            val pos = if (scannerMode == "Nearest") defenceBlocks.minByOrNull { it.distanceSq(playerPos) }
+                ?: return@loopHandler else defenceBlocks.random()
             val blockPos = BlockPos(pos.x.toDouble(), pos.y - player.eyeHeight + 1.5, pos.z.toDouble())
-            val rotation = RotationUtils.toRotation(blockPos.getVec(), false, player)
-            val raytrace = performBlockRaytrace(rotation, mc.playerController.blockReachDistance) ?: return
+            val rotation = RotationUtils.toRotation(blockPos.center, false, player)
+            val raytrace = performBlockRaytrace(rotation, mc.playerController.blockReachDistance) ?: return@loopHandler
 
-            if (rotations) {
-                RotationUtils.setTargetRotation(
-                    rotation,
-                    if (keepRotation) keepTicks else 1,
-                    strafe != "Off",
-                    strafe == "Strict",
-                    turnSpeed = minHorizontalSpeed..maxHorizontalSpeed to minVerticalSpeed..maxVerticalSpeed,
-                    angleThresholdForReset = angleThresholdUntilReset,
-                    smootherMode = smootherMode,
-                    simulateShortStop = simulateShortStop,
-                    startOffSlow = startRotatingSlow,
-                    slowDownOnDirChange = slowDownOnDirectionChange,
-                    useStraightLinePath = useStraightLinePath
-                )
+            if (options.rotationsActive) {
+                setTargetRotation(rotation, options, if (options.keepRotation) options.resetTicks else 1)
             }
 
             blockPosition = blockPos
 
             if (timerCounter.hasTimePassed(placeDelay)) {
-                if (!isPlaceablePos(blockPos)) return
+                if (!isPlaceablePos(blockPos)) return@loopHandler
 
                 when (autoSneak.lowercase()) {
                     "normal" -> mc.gameSettings.keyBindSneak.pressed = false
@@ -200,12 +152,11 @@ object BedDefender : Module("BedDefender", Category.WORLD, hideModule = false) {
         }
     }
 
-    @EventTarget
-    fun onRender3D(event: Render3DEvent) {
+    val onRender3D = handler<Render3DEvent> {
         if (mark && blockPosition != null) {
             val blockPos = BlockPos(blockPosition!!.x, blockPosition!!.y + 1, blockPosition!!.z)
             RenderUtils.drawBlockBox(blockPos, Color(68, 117, 255, 100), false)
-            return
+            return@handler
         }
     }
 
@@ -230,30 +181,31 @@ object BedDefender : Module("BedDefender", Category.WORLD, hideModule = false) {
     private fun placeBlock(blockPos: BlockPos, side: EnumFacing, hitVec: Vec3) {
         val player = mc.thePlayer ?: return
 
-        var stack = player.inventoryContainer.getSlot(serverSlot + 36).stack
+        var stack = player.inventorySlot(SilentHotbar.currentSlot + 36).stack ?: return
 
-        if (stack == null || stack.item !is ItemBlock || (stack.item as ItemBlock).block is BlockBush
-            || InventoryUtils.BLOCK_BLACKLIST.contains((stack.item as ItemBlock).block) || stack.stackSize <= 0) {
+        if (stack.item !is ItemBlock || (stack.item as ItemBlock).block is BlockBush
+            || InventoryUtils.BLOCK_BLACKLIST.contains((stack.item as ItemBlock).block) || stack.stackSize <= 0
+        ) {
             val blockSlot = InventoryUtils.findBlockInHotbar() ?: return
 
-            when (autoBlock.lowercase()) {
-                "off" -> return
-
-                "pick" -> {
-                    player.inventory.currentItem = blockSlot - 36
-                    mc.playerController.updateController()
-                }
-
-                "spoof", "switch" -> serverSlot = blockSlot - 36
+            if (autoBlock != "Off") {
+                SilentHotbar.selectSlotSilently(
+                    this,
+                    blockSlot,
+                    immediate = true,
+                    render = autoBlock == "Pick",
+                    resetManually = true
+                )
             }
-            stack = player.inventoryContainer.getSlot(blockSlot).stack
+
+            stack = player.inventorySlot(blockSlot).stack
         }
 
         tryToPlaceBlock(stack, blockPos, side, hitVec)
 
         // Since we violate vanilla slot switch logic if we send the packets now, we arrange them for the next tick
         if (autoBlock == "Switch")
-            serverSlot = player.inventory.currentItem
+            SilentHotbar.resetSlot(this, true)
 
         switchBlockNextTickIfPossible(stack)
 
@@ -278,7 +230,7 @@ object BedDefender : Module("BedDefender", Category.WORLD, hideModule = false) {
             if (swing) player.swingItem() else sendPacket(C0APacketAnimation())
 
             if (stack.stackSize <= 0) {
-                player.inventory.mainInventory[serverSlot] = null
+                player.inventory.mainInventory[SilentHotbar.currentSlot] = null
                 ForgeEventFactory.onPlayerDestroyItem(player, stack)
             } else if (stack.stackSize != prevSize || mc.playerController.isInCreativeMode)
                 mc.entityRenderer.itemRenderer.resetEquippedProgress()
@@ -295,34 +247,36 @@ object BedDefender : Module("BedDefender", Category.WORLD, hideModule = false) {
     private fun isPlaceablePos(pos: BlockPos): Boolean {
         val player = mc.thePlayer ?: return false
         val world = mc.theWorld ?: return false
-        
+
         return when (raycastMode.lowercase()) {
             "normal" -> {
                 val eyesPos = player.eyes
-                val movingObjectPosition = world.rayTraceBlocks(eyesPos, pos.getVec(), false, true, false)
+                val movingObjectPosition = world.rayTraceBlocks(eyesPos, pos.center, false, true, false)
 
                 movingObjectPosition != null && movingObjectPosition.blockPos == pos
             }
-            
-            "around" -> EnumFacing.values().any { !isFullBlock(pos.offset(it)) }
-            
+
+            "around" -> EnumFacing.entries.any { !isBlockBBValid(pos.offset(it)) }
+
             else -> true
         }
     }
 
     private fun switchBlockNextTickIfPossible(stack: ItemStack) {
-        val player = mc.thePlayer ?: return
-        if (autoBlock in arrayOf("Off","Switch")) return
-        if (stack.stackSize > 0) return
+        if (autoBlock in arrayOf("Off", "Switch") || stack.stackSize > 0)
+            return
 
         val switchSlot = InventoryUtils.findBlockInHotbar() ?: return
 
-        TickScheduler += {
-            if (autoBlock == "Pick") {
-                player.inventory.currentItem = switchSlot - 36
-                mc.playerController.updateController()
-            } else {
-                serverSlot = switchSlot - 36
+        nextTick {
+            if (autoBlock != "Off") {
+                SilentHotbar.selectSlotSilently(
+                    this,
+                    switchSlot,
+                    immediate = true,
+                    render = autoBlock == "Pick",
+                    resetManually = true
+                )
             }
         }
     }

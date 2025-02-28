@@ -5,47 +5,45 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.movement
 
-import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.PacketEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.Category
+import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.modules.combat.SuperKnockback
 import net.ccbluex.liquidbounce.features.module.modules.world.scaffolds.Scaffold
-import net.ccbluex.liquidbounce.utils.MovementUtils.isMoving
-import net.ccbluex.liquidbounce.utils.RotationUtils.currentRotation
-import net.ccbluex.liquidbounce.utils.RotationUtils.rotationData
+import net.ccbluex.liquidbounce.utils.extensions.isMoving
+import net.ccbluex.liquidbounce.utils.extensions.setSprintSafely
 import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils.serverOpenInventory
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.FloatValue
-import net.ccbluex.liquidbounce.value.ListValue
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils.activeSettings
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils.currentRotation
 import net.minecraft.network.play.client.C0BPacketEntityAction
 import net.minecraft.potion.Potion
 import net.minecraft.util.MovementInput
 import kotlin.math.abs
 
-object Sprint : Module("Sprint", Category.MOVEMENT, gameDetecting = false, hideModule = false) {
-    val mode by ListValue("Mode", arrayOf("Legit", "Vanilla"), "Vanilla")
+object Sprint : Module("Sprint", Category.MOVEMENT, gameDetecting = false) {
+    val mode by choices("Mode", arrayOf("Legit", "Vanilla"), "Vanilla")
 
-    val onlyOnSprintPress by BoolValue("OnlyOnSprintPress", false)
-    val alwaysCorrect by BoolValue("AlwaysCorrectSprint", false)
+    val onlyOnSprintPress by boolean("OnlyOnSprintPress", false)
+    private val alwaysCorrect by boolean("AlwaysCorrectSprint", false)
 
-    val allDirections by BoolValue("AllDirections", true) { mode == "Vanilla" }
-    val jumpDirections by BoolValue("JumpDirections", false) { mode == "Vanilla" && allDirections }
+    val allDirections by boolean("AllDirections", true) { mode == "Vanilla" }
+    val jumpDirections by boolean("JumpDirections", false) { mode == "Vanilla" && allDirections }
 
-    private val allDirectionsLimitSpeed by FloatValue("AllDirectionsLimitSpeed", 1f, 0.75f..1f)
+    private val allDirectionsLimitSpeed by float("AllDirectionsLimitSpeed", 1f, 0.75f..1f)
     { mode == "Vanilla" && allDirections }
-    private val allDirectionsLimitSpeedGround by BoolValue("AllDirectionsLimitSpeedOnlyGround", true)
+    private val allDirectionsLimitSpeedGround by boolean("AllDirectionsLimitSpeedOnlyGround", true)
     { mode == "Vanilla" && allDirections }
 
-    private val blindness by BoolValue("Blindness", true) { mode == "Vanilla" }
-    private val usingItem by BoolValue("UsingItem", false) { mode == "Vanilla" }
-    private val inventory by BoolValue("Inventory", false) { mode == "Vanilla" }
-    private val food by BoolValue("Food", true) { mode == "Vanilla" }
+    private val blindness by boolean("Blindness", true) { mode == "Vanilla" }
+    private val usingItem by boolean("UsingItem", false) { mode == "Vanilla" }
+    private val inventory by boolean("Inventory", false) { mode == "Vanilla" }
+    private val food by boolean("Food", true) { mode == "Vanilla" }
 
-    private val checkServerSide by BoolValue("CheckServerSide", false) { mode == "Vanilla" }
-    private val checkServerSideGround by BoolValue("CheckServerSideOnlyGround", false)
+    private val checkServerSide by boolean("CheckServerSide", false) { mode == "Vanilla" }
+    private val checkServerSideGround by boolean("CheckServerSideOnlyGround", false)
     { mode == "Vanilla" && checkServerSide }
-    private val noPackets by BoolValue("NoPackets", false) { mode == "Vanilla" }
+    private val noPackets by boolean("NoPackets", false) { mode == "Vanilla" }
 
     private var isSprinting = false
 
@@ -56,28 +54,29 @@ object Sprint : Module("Sprint", Category.MOVEMENT, gameDetecting = false, hideM
         val player = mc.thePlayer ?: return
 
         if (SuperKnockback.breakSprint()) {
-            player.isSprinting = false
+            player setSprintSafely false
             return
         }
 
-        if ((onlyOnSprintPress || !handleEvents()) && !player.isSprinting && !mc.gameSettings.keyBindSprint.isKeyDown && !SuperKnockback.startSprint() && !isSprinting)
+        if (!handleEvents() || onlyOnSprintPress && !player.isSprinting && !mc.gameSettings.keyBindSprint.isKeyDown && !SuperKnockback.startSprint() && !isSprinting)
             return
 
         if (Scaffold.handleEvents()) {
             if (!Scaffold.sprint) {
-                player.isSprinting = false
+                player setSprintSafely false
                 isSprinting = false
                 return
-            } else if (Scaffold.sprint && Scaffold.eagle == "Normal" && isMoving && player.onGround && Scaffold.eagleSneaking && Scaffold.eagleSprint) {
-                player.isSprinting = true
+            } else if (Scaffold.sprint && Scaffold.eagle == "Normal" && player.isMoving && player.onGround && Scaffold.eagleSneaking && Scaffold.eagleSprint) {
+                player setSprintSafely true
                 isSprinting = true
                 return
             }
         }
 
         if (handleEvents() || alwaysCorrect) {
-            player.isSprinting = !shouldStopSprinting(movementInput, isUsingItem)
+            player setSprintSafely !shouldStopSprinting(movementInput, isUsingItem)
             isSprinting = player.isSprinting
+
             if (player.isSprinting && allDirections && mode != "Legit") {
                 if (!allDirectionsLimitSpeedGround || player.onGround) {
                     player.motionX *= allDirectionsLimitSpeed
@@ -92,13 +91,13 @@ object Sprint : Module("Sprint", Category.MOVEMENT, gameDetecting = false, hideM
 
         val isLegitModeActive = mode == "Legit"
 
-        val modifiedForward = if (currentRotation != null && rotationData?.strict == true) {
+        val modifiedForward = if (currentRotation != null && activeSettings?.strict == true) {
             player.movementInput.moveForward
         } else {
             movementInput.moveForward
         }
 
-        if (!isMoving) {
+        if (!player.isMoving) {
             return true
         }
 
@@ -148,15 +147,14 @@ object Sprint : Module("Sprint", Category.MOVEMENT, gameDetecting = false, hideM
         return modifiedForward < threshold
     }
 
-    @EventTarget
-    fun onPacket(event: PacketEvent) {
+    val onPacket = handler<PacketEvent> { event ->
         if (mode == "Legit") {
-            return
+            return@handler
         }
 
         val packet = event.packet
         if (packet !is C0BPacketEntityAction || !noPackets || event.isCancelled) {
-            return
+            return@handler
         }
         if (packet.action == C0BPacketEntityAction.Action.STOP_SPRINTING || packet.action == C0BPacketEntityAction.Action.START_SPRINTING) {
             event.cancelEvent()

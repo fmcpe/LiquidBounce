@@ -3,14 +3,52 @@
     "contributors": [
         "1zuna",
         "Zywl",
-        "CzechHek"
+        "CzechHek",
+        "EclipsesDev"
     ],
     "translations": {
         "menu.altManager": "Alt Manager",
+        "menu.fontManager": "Font Manager",
         "menu.mods": "Mods",
         "menu.serverStatus": "Server Status",
         "menu.configuration": "Configuration",
         "menu.contributors": "Contributors",
+
+        "button.back": "Back",
+        "button.moveUp": "Move Up",
+        "button.moveDown": "Move Down",
+        "button.import": "Import",
+        "button.export": "Export",
+        "button.add": "Add",
+        "button.remove": "Remove",
+
+        "button.altManager.copy": "Copy",
+        "button.altManager.login": "Login",
+        "button.altManager.randomAlt": "Random Alt",
+        "button.altManager.randomName": "Random Name",
+        "button.altManager.directLogin": "Direct Login",
+        "button.altManager.theAltening": "TheAltening",
+        "button.altManager.cape": "Cape",
+        "button.altManager.sessionLogin": "Session Login",
+        "button.altManager.buy": "Buy",
+
+        "button.fontManager.edit": "Edit",
+
+        "button.openURL": "Open URL",
+        "button.cancel": "Cancel",
+
+        "text.fontManager.name": "Name",
+        "text.fontManager.size": "Size",
+        "text.fontManager.preview": "Preview",
+        "text.fontManager.customFonts": "%d Custom Font",
+        "text.fontManager.customFonts.plural": "%d Custom Fonts",
+
+        "text.Search": "§7Search",
+        "text.Loggingintoaccount": "Logging into account...",
+
+        "menu.discordRPC.typeBox": "Type Here..",
+
+        "menu.altManager.typeCustomPrefix": "Type Custom Alt Prefix Here..",
 
         "notification.moduleEnabled": "Enabled %s",
         "notification.moduleDisabled": "Disabled %s",
@@ -39,7 +77,11 @@
 
         "module.bedDefender.description": "Automatically defends bed with blocks",
 
-        "module.bowAimbot.description": "Automatically aims at players when using a bow.",
+        "module.bedPlates.description": "Allows you to see blocks around beds.",
+
+        "module.pointerESP.description": "Allows you to see pointed entity positions.",
+
+        "module.projectileAimbot.description": "Automatically aims at players when using a projectile.",
 
         "module.criticals.description": "Automatically deals critical hits.",
 
@@ -72,10 +114,6 @@
         "module.bedGodMode.description": "Allows you to walk around lying in a bed. (For 1.9)",
 
         "module.clip.description": "Allows you to clip through blocks.",
-        
-        "module.airJump.description": "Allows you to jump in the mid air",
-        
-        "module.airLadder.description": "Allows you to climb up ladders/vines without touching them.",
 
         "module.antiBounce.description": "Prevents you from bouncing on blocks.",
 
@@ -87,13 +125,13 @@
         
         "module.antiBot.description": "Prevents KillAura from attacking AntiCheat bots.",
 
-        "module.antiExploit": "Prevents server from crashing you.",
+        "module.antiExploit.description": "Prevents server from crashing you.",
         
         "module.antiCactus.description": "Prevents cacti from damaging you.",
         
         "module.antiFireball.description": "Automatically punches fireballs away from you.",
 
-        "module.antiVanish.description": "Automatically detects vanished players.",
+        "module.antiVoid.description": "Automatically setbacks you after falling a certain distance.",
         
         "module.atAllProvider.description": "Automatically mentions everyone on the server when using '@a' in your message.",
         
@@ -131,9 +169,9 @@
         
         "module.bufferSpeed.description": "Allows you to walk faster on slabs and stairs.",
         
-        "module.bugUp.description": "Automatically setbacks you after falling a certain distance.",
-        
         "module.cameraClip.description": "Allows you to see through walls in third person view.",
+
+        "module.cameraView.description": "Allows you to modify your camera-Y position.",
         
         "module.chams.description": "Allows you to see targets through blocks.",
         
@@ -176,6 +214,8 @@
         "module.forceUnicodeChat.description": "Allows you to send unicode messages in chat.",
         
         "module.freeCam.description": "Allows you to move out of your body.",
+
+        "module.freeLook.description": "Allows you to see around in third person view.",
         
         "module.freeze.description": "Allows you to stay stuck in mid air.",
         
@@ -207,15 +247,17 @@
 
         "module.itemPhysics.description": "Allows dropped items to have physics",
 
+        "module.jumpCircle.description": "Renders a circle below you when jumping.",
+
         "module.keepAlive.description": "Tries to prevent you from dying.",
         
         "module.keepContainer.description": "Allows you to open a formerly closed inventory container everywhere. (Press INSERT Key to open)",
 
+        "module.keepTabList.description": "Keeps TAB List opened",
+
         "module.keyPearl.description": "Allows you to throw an ender pearl from your hotbar using a certain key.",
 
         "module.kick.description": "Allows you to kick yourself from a server.",
-        
-        "module.ladderJump.description": "Boosts you up when touching a ladder. (AAC)",
         
         "module.liquidChat.description": "Allows you to chat with other LiquidBounce users.",
         
@@ -237,8 +279,6 @@
         
         "module.noBob.description": "Disables the view bobbing effect.",
         
-        "module.noBooks.description": "Blocks server from opening books (forced ads, ...)",
-        
         "module.noClip.description": "Allows you to freely move through walls (A sandblock has to fall on your head).",
         
         "module.noFOV.description": "Disables FOV changes caused by speed effect, etc.",
@@ -257,13 +297,13 @@
 
         "module.noSlotSet.description": "Prevents the server from changing your hotbar slot.",
         
-        "module.noScoreboard.description": "Disables the scoreboard.",
-        
         "module.noSlow.description": "Cancels slowness effects caused by Soul Sand and using items.",
         
         "module.noSlowBreak.description": "Automatically adjusts breaking speed when using modules that influence it.",
         
         "module.noSwing.description": "Disabled swing effect when hitting an entity/mining a block.",
+
+        "module.notifier.description": "Notifies you about all events.",
         
         "module.noWeb.description": "Prevents you from getting slowed down in webs.",
         
@@ -312,6 +352,8 @@
         "module.skinDerp.description": "Makes your skin blink (Requires multi-layer skin).",
 
         "module.slimeJump.description": "Allows you to to jump higher on slime blocks.",
+
+        "module.silentHotbar.description": "Controls in which scenarios the silently selected item should be rendered.",
         
         "module.sneak.description": "Automatically sneaks all the time.",
         
@@ -346,8 +388,6 @@
         "module.vehicleOneHit.description": "Allows you to break vehicles with a single hit.",
         
         "module.wallClimb.description": "Allows you to climb up walls like a spider.",
-
-        "module.waterSpeed.description": "Allows you to swim faster.",
         
         "module.xRay.description": "Allows you to see ores through walls.",
         
@@ -359,6 +399,18 @@
 
         "module.overrideRaycast.description": "Overrides your rotation-based raycast with the server rotation based raycast.",
 
-        "module.tickBase.desccription": "Buffers ticks to get early hits of an enemy."
+        "module.tickBase.description": "Buffers ticks to get early hits of an enemy.",
+
+        "module.rotationRecorder.description": "Records and saves your rotations.",
+
+        "module.forwardTrack.description": "Reveals the actual position of an entity.",
+
+        "module.clickRecorder.description": "Records and saves your clicks.",
+
+        "module.chineseHat.description": "Renders a chinese-like hat on specific entities.",
+
+        "module.snakeGame.description": "The snake game for free. sniff sniff.",
+
+        "module.anticheatDetector.description": "Detects anti-cheats by analyzing specific packets."
     }
 }

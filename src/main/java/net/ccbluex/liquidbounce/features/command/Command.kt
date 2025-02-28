@@ -6,12 +6,11 @@
 package net.ccbluex.liquidbounce.features.command
 
 import net.ccbluex.liquidbounce.LiquidBounce.commandManager
-import net.ccbluex.liquidbounce.utils.ClientUtils.displayChatMessage
-import net.ccbluex.liquidbounce.utils.MinecraftInstance
-import net.minecraft.client.audio.PositionedSoundRecord
-import net.minecraft.util.ResourceLocation
+import net.ccbluex.liquidbounce.utils.client.MinecraftInstance
+import net.ccbluex.liquidbounce.utils.client.asResourceLocation
+import net.ccbluex.liquidbounce.utils.client.playSound
 
-abstract class Command(val command: String, vararg val alias: String) : MinecraftInstance() {
+abstract class Command(val command: String, vararg val alias: String) : MinecraftInstance {
     /**
      * Execute commands with provided [args]
      */
@@ -30,30 +29,32 @@ abstract class Command(val command: String, vararg val alias: String) : Minecraf
     /**
      * Print [msg] to chat
      */
-    protected fun chat(msg: String) = displayChatMessage("§3$msg")
+    protected fun chat(msg: String) = net.ccbluex.liquidbounce.utils.client.chat("§3$msg")
 
     /**
      * Print [syntax] of command to chat
      */
-    protected fun chatSyntax(syntax: String) = displayChatMessage("§3Syntax: §7${commandManager.prefix}$syntax")
+    protected fun chatSyntax(syntax: String) = chat("§3Syntax: §7${commandManager.prefix}$syntax")
 
     /**
      * Print [syntaxes] of command to chat
      */
     protected fun chatSyntax(syntaxes: Array<String>) {
-        displayChatMessage("§3Syntax:")
+        chat("§3Syntax:")
 
         for (syntax in syntaxes)
-            displayChatMessage("§8> §7${commandManager.prefix}$command ${syntax.lowercase()}")
+            chat("§8> §7${commandManager.prefix}$command ${syntax.lowercase()}")
     }
 
     /**
      * Print a syntax error to chat
      */
-    protected fun chatSyntaxError() = displayChatMessage("§3Syntax error")
+    protected fun chatSyntaxError() = chat("§3Syntax error")
 
     /**
      * Play edit sound
      */
-    protected fun playEdit() = mc.soundHandler.playSound(PositionedSoundRecord.create(ResourceLocation("random.anvil_use"), 1F))
+    protected fun playEdit() {
+        mc.playSound("random.anvil_use".asResourceLocation())
+    }
 }

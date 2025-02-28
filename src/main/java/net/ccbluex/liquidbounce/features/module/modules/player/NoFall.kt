@@ -6,77 +6,109 @@
 package net.ccbluex.liquidbounce.features.module.modules.player
 
 import net.ccbluex.liquidbounce.event.*
-import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.Category
+import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.modules.player.nofallmodes.aac.AAC
 import net.ccbluex.liquidbounce.features.module.modules.player.nofallmodes.aac.AAC3311
 import net.ccbluex.liquidbounce.features.module.modules.player.nofallmodes.aac.AAC3315
 import net.ccbluex.liquidbounce.features.module.modules.player.nofallmodes.aac.LAAC
 import net.ccbluex.liquidbounce.features.module.modules.player.nofallmodes.other.*
 import net.ccbluex.liquidbounce.features.module.modules.player.nofallmodes.other.Blink
-import net.ccbluex.liquidbounce.features.module.modules.render.FreeCam
 import net.ccbluex.liquidbounce.utils.block.BlockUtils.collideBlock
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.FloatValue
-import net.ccbluex.liquidbounce.value.IntegerValue
-import net.ccbluex.liquidbounce.value.ListValue
+import net.ccbluex.liquidbounce.utils.rotation.AlwaysRotationSettings
 import net.minecraft.block.BlockLiquid
 import net.minecraft.util.AxisAlignedBB.fromBounds
+import net.minecraft.util.BlockPos
+import net.minecraft.util.Vec3
+import kotlin.math.max
 
-object NoFall : Module("NoFall", Category.PLAYER, hideModule = false) {
+object NoFall : Module("NoFall", Category.PLAYER) {
     private val noFallModes = arrayOf(
+
+        // Main
         SpoofGround,
         NoGround,
         Packet,
+        Cancel,
         MLG,
+        Blink,
+
+        // AAC
         AAC,
         LAAC,
         AAC3311,
         AAC3315,
-        Cancel,
+
+        // Hypixel (Watchdog)
+        Hypixel,
+        HypixelTimer,
+
+        // Vulcan
+        VulcanFast288,
+
+        // Other Server
         Spartan,
         CubeCraft,
-        Hypixel,
-        Blink,
-        VulcanFast288
     )
 
     private val modes = noFallModes.map { it.modeName }.toTypedArray()
 
-    val mode by ListValue("Mode", modes, "SpoofGround")
+    val mode by choices("Mode", modes, "MLG")
 
-    val minFallDistance by FloatValue("MinMLGHeight", 5f, 2f..50f, subjective = true) { mode == "MLG" }
-    val retrieveDelay by IntegerValue("RetrieveDelay", 100, 100..500, subjective = true) { mode == "MLG" }
+    val minFallDistance by float("MinMLGHeight", 5f, 2f..50f) { mode == "MLG" }.subjective()
+
+    val retrieveDelay: Int by int("RetrieveDelayTicks", 5, 1..10) {
+        mode == "MLG"
+    }.onChanged {
+        maxRetrievalWaitingTimeValue.set(max(maxRetrievalWaitingTime, it))
+    }.subjective()
+
+    private val maxRetrievalWaitingTimeValue = int("MaxRetrievalWaitingTime", 10, 1..20) {
+        mode == "MLG"
+    }.onChange { _, new ->
+        new.coerceAtLeast(retrieveDelay)
+    }
+
+    val maxRetrievalWaitingTime by maxRetrievalWaitingTimeValue
+
+    val autoMLG by choices("AutoMLG", arrayOf("Off", "Pick", "Spoof"), "Spoof") { mode == "MLG" }
+    val swing by boolean("Swing", true) { mode == "MLG" }
+
+    val options = AlwaysRotationSettings(this) { mode == "MLG" }
 
     // Using too many times of simulatePlayer could result timer flag. Hence, why this is disabled by default.
-    val checkFallDist by BoolValue("CheckFallDistance", false, subjective = true) { mode == "Blink" }
+    val checkFallDist by boolean("CheckFallDistance", false) { mode == "Blink" }.subjective()
+    val fallDist by floatRange("FallDistance", 2.5f..20f, 0f..100f) {
+        mode == "Blink" && checkFallDist
+    }.subjective()
 
-    val minFallDist: FloatValue = object : FloatValue("MinFallDistance", 2.5f, 0f..10f, subjective = true) {
-        override fun isSupported() = mode == "Blink" && checkFallDist
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxFallDist.get())
-    }
-    val maxFallDist: FloatValue = object : FloatValue("MaxFallDistance", 20f, 0f..100f, subjective = true) {
-        override fun isSupported() = mode == "Blink" && checkFallDist
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minFallDist.get())
-    }
+    val autoOff by boolean("AutoOff", true) { mode == "Blink" }
+    val simulateDebug by boolean("SimulationDebug", false) { mode == "Blink" }.subjective()
+    val fakePlayer by boolean("FakePlayer", true) { mode == "Blink" }.subjective()
 
-    val autoOff by BoolValue("AutoOff", true) { mode == "Blink" }
-    val simulateDebug by BoolValue("SimulationDebug", false, subjective = true) { mode == "Blink" }
-    val fakePlayer by BoolValue("FakePlayer", true, subjective = true) { mode == "Blink" }
+    var currentMlgBlock: BlockPos? = null
+    var retrievingPos: Vec3? = null
 
     override fun onEnable() {
         modeModule.onEnable()
+        retrievingPos = null
     }
 
     override fun onDisable() {
+        if (mode == "MLG") {
+            currentMlgBlock = null
+            retrievingPos = null
+        }
+
         modeModule.onDisable()
     }
 
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
-        val thePlayer = mc.thePlayer
+    val onTick = handler<GameTickEvent> {
+        modeModule.onTick()
+    }
 
-        if (FreeCam.handleEvents()) return
+    val onUpdate = handler<UpdateEvent> {
+        val thePlayer = mc.thePlayer
 
         if (collideBlock(thePlayer.entityBoundingBox) { it is BlockLiquid } || collideBlock(
                 fromBounds(
@@ -88,48 +120,41 @@ object NoFall : Module("NoFall", Category.PLAYER, hideModule = false) {
                     thePlayer.entityBoundingBox.minZ
                 )
             ) { it is BlockLiquid }
-        ) return
+        ) return@handler
 
         modeModule.onUpdate()
     }
 
-    @EventTarget
-    fun onRender3D(event: Render3DEvent) {
-        modeModule.onRender3D(event)
+    val onRender3D = handler<Render3DEvent> {
+        modeModule.onRender3D(it)
     }
 
-    @EventTarget
-    fun onPacket(event: PacketEvent) {
-        mc.thePlayer ?: return
+    val onPacket = handler<PacketEvent> {
+        mc.thePlayer ?: return@handler
 
-        modeModule.onPacket(event)
+        modeModule.onPacket(it)
     }
 
-    @EventTarget
-    fun onBB(event: BlockBBEvent) {
-        mc.thePlayer ?: return
+    val onBB = handler<BlockBBEvent> {
+        mc.thePlayer ?: return@handler
 
-        modeModule.onBB(event)
+        modeModule.onBB(it)
     }
 
     // Ignore condition used in LAAC mode
-    @EventTarget(ignoreCondition = true)
-    fun onJump(event: JumpEvent) {
-        modeModule.onJump(event)
+    val onJump = handler<JumpEvent>(always = true) {
+        modeModule.onJump(it)
     }
 
-    @EventTarget
-    fun onStep(event: StepEvent) {
-        modeModule.onStep(event)
+    val onStep = handler<StepEvent> {
+        modeModule.onStep(it)
     }
 
-    @EventTarget
-    fun onMotion(event: MotionEvent) {
-        modeModule.onMotion(event)
+    val onMotion = handler<MotionEvent> {
+        modeModule.onMotion(it)
     }
 
-    @EventTarget
-    fun onMove(event: MoveEvent) {
+    val onMove = handler<MoveEvent> {
         val thePlayer = mc.thePlayer
 
         if (collideBlock(thePlayer.entityBoundingBox) { it is BlockLiquid }
@@ -143,9 +168,13 @@ object NoFall : Module("NoFall", Category.PLAYER, hideModule = false) {
                     thePlayer.entityBoundingBox.minZ
                 )
             ) { it is BlockLiquid }
-        ) return
+        ) return@handler
 
-        modeModule.onMove(event)
+        modeModule.onMove(it)
+    }
+
+    val onRotationUpdate = handler<RotationUpdateEvent> {
+        modeModule.onRotationUpdate()
     }
 
     override val tag

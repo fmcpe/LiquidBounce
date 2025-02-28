@@ -5,79 +5,106 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.render
 
-import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.Render3DEvent
-import net.ccbluex.liquidbounce.event.UpdateEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.WorldEvent
+import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.Category
-import net.ccbluex.liquidbounce.utils.render.ColorUtils.rainbow
+import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.utils.extensions.*
+import net.ccbluex.liquidbounce.utils.kotlin.removeEach
+import net.ccbluex.liquidbounce.utils.render.ColorSettingsInteger
+import net.ccbluex.liquidbounce.utils.render.ColorUtils.withAlpha
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.glColor
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.IntegerValue
 import org.lwjgl.opengl.GL11.*
 import java.awt.Color
-import java.util.*
 
-object Breadcrumbs : Module("Breadcrumbs", Category.RENDER, hideModule = false) {
-    val colorRainbow by BoolValue("Rainbow", false)
-        val colorRed by IntegerValue("R", 255, 0..255) { !colorRainbow }
-        val colorGreen by IntegerValue("G", 179, 0..255) { !colorRainbow }
-        val colorBlue by IntegerValue("B", 72, 0..255) { !colorRainbow }
+object Breadcrumbs : Module("Breadcrumbs", Category.RENDER) {
+    val colors = ColorSettingsInteger(this, "Color").with(132, 102, 255)
+    private val lineHeight by float("LineHeight", 0.25F, 0.25F..2F)
+    private val temporary by boolean("Temporary", true)
+    private val fade by boolean("Fade", true) { temporary }
+    private val lifeTime by float("LifeTime", 1F, 0F..10F) { temporary }
 
-    private val positions = LinkedList<DoubleArray>()
+    private val positions = ArrayDeque<PositionData>()
 
-    @EventTarget
-    fun onRender3D(event: Render3DEvent) {
-        val color = if (colorRainbow) rainbow() else Color(colorRed, colorGreen, colorBlue)
+    val onRender3D = handler<Render3DEvent> {
+        val player = mc.thePlayer ?: return@handler
 
-        synchronized(positions) {
-            glPushMatrix()
-            glDisable(GL_TEXTURE_2D)
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-            glEnable(GL_LINE_SMOOTH)
-            glEnable(GL_BLEND)
-            glDisable(GL_DEPTH_TEST)
-
-            mc.entityRenderer.disableLightmap()
-
-            glBegin(GL_LINE_STRIP)
-            glColor(color)
-
-            val renderPosX = mc.renderManager.viewerPosX
-            val renderPosY = mc.renderManager.viewerPosY
-            val renderPosZ = mc.renderManager.viewerPosZ
-
-            for (pos in positions)
-                glVertex3d(pos[0] - renderPosX, pos[1] - renderPosY, pos[2] - renderPosZ)
-
-            glColor4d(1.0, 1.0, 1.0, 1.0)
-            glEnd()
-            glEnable(GL_DEPTH_TEST)
-            glDisable(GL_LINE_SMOOTH)
-            glDisable(GL_BLEND)
-            glEnable(GL_TEXTURE_2D)
-            glPopMatrix()
+        if (positions.isEmpty() && !player.isMoving) {
+            return@handler
         }
+
+        val currentTime = System.currentTimeMillis()
+        val fadeSeconds = lifeTime * 1000L
+
+        glPushAttrib(GL_ALL_ATTRIB_BITS)
+        glPushMatrix()
+
+        glDisable(GL_TEXTURE_2D)
+        glEnable(GL_BLEND)
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        glEnable(GL_LINE_SMOOTH)
+        glDisable(GL_DEPTH_TEST)
+        glDisable(GL_CULL_FACE)
+        glEnable(GL_ALPHA_TEST)
+        glAlphaFunc(GL_GREATER, 0.0f)
+
+        player.interpolatedPosition(player.prevPos).let { pos ->
+            val data = PositionData(pos.toDoubleArray(), currentTime)
+
+            val lastData = positions.lastOrNull()?.array
+
+            if (lastData == null || !lastData.contentEquals(data.array)) positions += data
+        }
+
+        mc.entityRenderer.disableLightmap()
+
+        glBegin(GL_QUADS)
+
+        val renderPosX = mc.renderManager.viewerPosX
+        val renderPosY = mc.renderManager.viewerPosY
+        val renderPosZ = mc.renderManager.viewerPosZ
+
+        positions.removeEach {
+            val timestamp = System.currentTimeMillis() - it.time
+            val transparency = if (fade) {
+                (0f..150f).lerpWith(1 - (timestamp / fadeSeconds).coerceAtMost(1.0F))
+            } else 150f
+
+            val startPos = it.array
+            val endPos = positions.getOrNull(positions.indexOf(it) + 1)?.array
+                ?: return@removeEach temporary && timestamp > fadeSeconds
+
+            glColor(colors.color().withAlpha(transparency.toInt()))
+
+            glVertex3d(startPos[0] - renderPosX, startPos[1] - renderPosY, startPos[2] - renderPosZ)
+            glVertex3d(startPos[0] - renderPosX, startPos[1] - renderPosY + lineHeight, startPos[2] - renderPosZ)
+            glVertex3d(endPos[0] - renderPosX, endPos[1] - renderPosY + lineHeight, endPos[2] - renderPosZ)
+            glVertex3d(endPos[0] - renderPosX, endPos[1] - renderPosY, endPos[2] - renderPosZ)
+
+            temporary && timestamp > fadeSeconds
+        }
+
+        glEnd()
+
+        glColor(Color.WHITE)
+        glEnable(GL_CULL_FACE)
+        glEnable(GL_DEPTH_TEST)
+        glDisable(GL_ALPHA_TEST)
+        glDisable(GL_LINE_SMOOTH)
+        glDisable(GL_BLEND)
+        glEnable(GL_TEXTURE_2D)
+        glPopMatrix()
+        glPopAttrib()
     }
 
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
-        synchronized(positions) {
-            positions += doubleArrayOf(mc.thePlayer.posX, mc.thePlayer.entityBoundingBox.minY, mc.thePlayer.posZ)
-        }
-    }
-
-    override fun onEnable() {
-        val thePlayer = mc.thePlayer ?: return
-
-        synchronized(positions) {
-            positions += doubleArrayOf(thePlayer.posX, thePlayer.posY + thePlayer.eyeHeight * 0.5f, thePlayer.posZ)
-
-            positions += doubleArrayOf(thePlayer.posX, thePlayer.posY, thePlayer.posZ)
-        }
+    val onWorld = handler<WorldEvent> {
+        positions.clear()
     }
 
     override fun onDisable() {
-        synchronized(positions) { positions.clear() }
+        positions.clear()
     }
 }
+
+private class PositionData(val array: DoubleArray, val time: Long)

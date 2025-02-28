@@ -5,42 +5,39 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.combat
 
-import net.ccbluex.liquidbounce.event.EventTarget
-import net.ccbluex.liquidbounce.event.UpdateEvent
+import net.ccbluex.liquidbounce.event.GameTickEvent
+import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
+import net.ccbluex.liquidbounce.utils.client.PacketUtils.sendPacket
 import net.ccbluex.liquidbounce.utils.extensions.sendUseItem
 import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils
 import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils.isFirstInventoryClick
 import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils.serverOpenInventory
-import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils.serverSlot
+import net.ccbluex.liquidbounce.utils.inventory.SilentHotbar
 import net.ccbluex.liquidbounce.utils.timing.MSTimer
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.FloatValue
-import net.ccbluex.liquidbounce.value.IntegerValue
-import net.ccbluex.liquidbounce.value.ListValue
+import net.ccbluex.liquidbounce.utils.timing.TickedActions.nextTick
 import net.minecraft.client.gui.inventory.GuiInventory
 import net.minecraft.init.Items
 import net.minecraft.network.play.client.C07PacketPlayerDigging
 import net.minecraft.network.play.client.C07PacketPlayerDigging.Action.DROP_ITEM
-import net.minecraft.network.play.client.C09PacketHeldItemChange
 import net.minecraft.util.BlockPos
 import net.minecraft.util.EnumFacing
 
-object AutoSoup : Module("AutoSoup", Category.COMBAT, hideModule = false) {
+object AutoSoup : Module("AutoSoup", Category.COMBAT) {
 
-    private val health by FloatValue("Health", 15f, 0f..20f)
-    private val delay by IntegerValue("Delay", 150, 0..500)
+    private val health by float("Health", 15f, 0f..20f)
+    private val delay by int("Delay", 150, 0..500)
 
-    private val openInventory by BoolValue("OpenInv", true)
-    private val startDelay by IntegerValue("StartDelay", 100, 0..1000) { openInventory }
-    private val autoClose by BoolValue("AutoClose", false) { openInventory }
-    private val autoCloseDelay by IntegerValue("CloseDelay", 500, 0..1000) { openInventory && autoClose }
+    private val openInventory by boolean("OpenInv", true)
+    private val startDelay by int("StartDelay", 100, 0..1000) { openInventory }
+    private val autoClose by boolean("AutoClose", false) { openInventory }
+    private val autoCloseNoSoup by boolean("AutoCloseNoSoup", true) { autoClose }
+    private val autoCloseDelay by int("CloseDelay", 500, 0..1000) { openInventory && autoClose }
 
-    private val simulateInventory by BoolValue("SimulateInventory", false) { !openInventory }
+    private val simulateInventory by boolean("SimulateInventory", false) { !openInventory }
 
-    private val bowl by ListValue("Bowl", arrayOf("Drop", "Move", "Stay"), "Drop")
+    private val bowl by choices("Bowl", arrayOf("Drop", "Move", "Stay"), "Drop")
 
     private val timer = MSTimer()
     private val startTimer = MSTimer()
@@ -51,39 +48,41 @@ object AutoSoup : Module("AutoSoup", Category.COMBAT, hideModule = false) {
     override val tag
         get() = health.toString()
 
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
-        val thePlayer = mc.thePlayer ?: return
+    val onGameTick = handler<GameTickEvent>(priority = -1) {
+        val thePlayer = mc.thePlayer ?: return@handler
 
         if (!timer.hasTimePassed(delay))
-            return
+            return@handler
 
         val soupInHotbar = InventoryUtils.findItem(36, 44, Items.mushroom_stew)
 
         if (thePlayer.health <= health && soupInHotbar != null) {
-            sendPacket(C09PacketHeldItemChange(soupInHotbar - 36))
+            SilentHotbar.selectSlotSilently(this, soupInHotbar, 1, true)
 
-            thePlayer.sendUseItem(thePlayer.inventory.mainInventory[serverSlot])
+            thePlayer.sendUseItem(thePlayer.inventory.mainInventory[SilentHotbar.currentSlot])
 
             // Schedule slot switch the next tick as we violate vanilla logic if we do it now.
-            TickScheduler += {
-                if (bowl == "Drop")
-                    sendPacket(C07PacketPlayerDigging(DROP_ITEM, BlockPos.ORIGIN, EnumFacing.DOWN))
+            nextTick {
+                if (bowl == "Drop") {
+                    if (!SilentHotbar.isSlotModified(this)) {
+                        SilentHotbar.selectSlotSilently(this, soupInHotbar, 0, true)
+                    }
 
-                TickScheduler += {
-                    serverSlot = thePlayer.inventory.currentItem
+                    sendPacket(C07PacketPlayerDigging(DROP_ITEM, BlockPos.ORIGIN, EnumFacing.DOWN))
                 }
+
+                SilentHotbar.resetSlot(this)
             }
 
             timer.reset()
-            return
+            return@handler
         }
 
         val bowlInHotbar = InventoryUtils.findItem(36, 44, Items.bowl)
 
         if (bowl == "Move" && bowlInHotbar != null) {
             if (openInventory && mc.currentScreen !is GuiInventory)
-                return
+                return@handler
 
             var bowlMovable = false
 
@@ -110,7 +109,7 @@ object AutoSoup : Module("AutoSoup", Category.COMBAT, hideModule = false) {
             if (isFirstInventoryClick && !startTimer.hasTimePassed(startDelay)) {
                 // GuiInventory checks, have to be put separately due to problem with reseting timer.
                 if (mc.currentScreen is GuiInventory)
-                    return
+                    return@handler
             } else {
                 // GuiInventory checks, have to be put separately due to problem with reseting timer.
                 if (mc.currentScreen is GuiInventory)
@@ -120,7 +119,7 @@ object AutoSoup : Module("AutoSoup", Category.COMBAT, hideModule = false) {
             }
 
             if (openInventory && mc.currentScreen !is GuiInventory)
-                return
+                return@handler
 
             canCloseInventory = false
 
@@ -139,9 +138,12 @@ object AutoSoup : Module("AutoSoup", Category.COMBAT, hideModule = false) {
         }
 
         if (autoClose && canCloseInventory && closeTimer.hasTimePassed(autoCloseDelay)) {
+            if (!autoCloseNoSoup && soupInInventory == null) return@handler
+
             if (mc.currentScreen is GuiInventory) {
                 mc.thePlayer?.closeScreen()
             }
+
             closeTimer.reset()
             canCloseInventory = false
         }

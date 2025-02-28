@@ -65,7 +65,7 @@ public abstract class MixinRenderEntityItem extends Render<EntityItem> {
      */
     @Overwrite
     private int func_177077_a(EntityItem itemIn, double x, double y, double z, float p_177077_8_, IBakedModel ibakedmodel) {
-        final ItemPhysics itemPhysics = (ItemPhysics) LiquidBounce.INSTANCE.getModuleManager().getModule(ItemPhysics.class);
+        final ItemPhysics itemPhysics = ItemPhysics.INSTANCE;
 
         ItemStack itemStack = itemIn.getEntityItem();
         Item item = itemStack.getItem();
@@ -83,7 +83,7 @@ public abstract class MixinRenderEntityItem extends Render<EntityItem> {
 
         float age = (float) itemIn.getAge() + p_177077_8_;
         float hoverStart = itemIn.hoverStart;
-        boolean isPhysicsState = itemPhysics.getState();
+        boolean isPhysicsState = itemPhysics.handleEvents();
         boolean isRealistic = itemPhysics.getRealistic();
         float weight = isPhysicsState ? itemPhysics.getWeight() : 0.0f;
 

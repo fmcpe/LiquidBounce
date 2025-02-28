@@ -5,47 +5,44 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.movement
 
-import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.UpdateEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.Category
-import net.ccbluex.liquidbounce.utils.MovementUtils.isMoving
-import net.ccbluex.liquidbounce.utils.block.BlockUtils.getBlock
+import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.utils.block.block
+import net.ccbluex.liquidbounce.utils.extensions.isMoving
 import net.ccbluex.liquidbounce.utils.extensions.tryJump
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.ListValue
 import net.minecraft.block.BlockStairs
 import net.minecraft.util.BlockPos
 
 object FastStairs : Module("FastStairs", Category.MOVEMENT) {
 
-    private val mode by ListValue("Mode", arrayOf("Step", "NCP", "AAC3.1.0", "AAC3.3.6", "AAC3.3.13"), "NCP")
-        private val longJump by BoolValue("LongJump", false) { mode.startsWith("AAC") }
+    private val mode by choices("Mode", arrayOf("Step", "NCP", "AAC3.1.0", "AAC3.3.6", "AAC3.3.13"), "NCP")
+    private val longJump by boolean("LongJump", false) { mode.startsWith("AAC") }
 
     private var canJump = false
 
     private var walkingDown = false
 
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
-        val thePlayer = mc.thePlayer ?: return
+    val onUpdate = handler<UpdateEvent> {
+        val thePlayer = mc.thePlayer ?: return@handler
 
-        if (!isMoving || Speed.handleEvents())
-            return
+        if (!thePlayer.isMoving || Speed.handleEvents())
+            return@handler
 
-        if (thePlayer.fallDistance > 0 && !walkingDown)
-            walkingDown = true
-        else if (thePlayer.posY > thePlayer.prevChasingPosY)
-            walkingDown = false
+        when {
+            thePlayer.fallDistance > 0 && !walkingDown -> walkingDown = true
+            thePlayer.posY > thePlayer.prevChasingPosY -> walkingDown = false
+        }
 
         val mode = mode
 
         if (!thePlayer.onGround)
-            return
+            return@handler
 
         val blockPos = BlockPos(thePlayer)
 
-        if (getBlock(blockPos) is BlockStairs && !walkingDown) {
+        if (blockPos.block is BlockStairs && !walkingDown) {
             thePlayer.setPosition(thePlayer.posX, thePlayer.posY + 0.5, thePlayer.posZ)
 
             val motion = when (mode) {
@@ -59,14 +56,14 @@ object FastStairs : Module("FastStairs", Category.MOVEMENT) {
             thePlayer.motionZ *= motion
         }
 
-        if (getBlock(blockPos.down()) is BlockStairs) {
+        if (blockPos.down().block is BlockStairs) {
             if (walkingDown) {
                 when (mode) {
                     "NCP" -> thePlayer.motionY = -1.0
                     "AAC3.3.13" -> thePlayer.motionY -= 0.014
                 }
 
-                return
+                return@handler
             }
 
             val motion = when (mode) {

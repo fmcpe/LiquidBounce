@@ -5,27 +5,23 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.movement
 
-import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.JumpEvent
 import net.ccbluex.liquidbounce.event.MoveEvent
 import net.ccbluex.liquidbounce.event.UpdateEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.Category
+import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.modules.movement.longjumpmodes.aac.AACv1
 import net.ccbluex.liquidbounce.features.module.modules.movement.longjumpmodes.aac.AACv2
 import net.ccbluex.liquidbounce.features.module.modules.movement.longjumpmodes.aac.AACv3
 import net.ccbluex.liquidbounce.features.module.modules.movement.longjumpmodes.ncp.NCP
+import net.ccbluex.liquidbounce.features.module.modules.movement.longjumpmodes.other.Buzz
 import net.ccbluex.liquidbounce.features.module.modules.movement.longjumpmodes.other.Hycraft
 import net.ccbluex.liquidbounce.features.module.modules.movement.longjumpmodes.other.Redesky
-import net.ccbluex.liquidbounce.features.module.modules.movement.longjumpmodes.other.Buzz
 import net.ccbluex.liquidbounce.features.module.modules.movement.longjumpmodes.other.VerusDamage
 import net.ccbluex.liquidbounce.features.module.modules.movement.longjumpmodes.other.VerusDamage.damaged
-import net.ccbluex.liquidbounce.utils.MovementUtils.isMoving
-import net.ccbluex.liquidbounce.utils.MovementUtils.speed
+import net.ccbluex.liquidbounce.utils.extensions.isMoving
 import net.ccbluex.liquidbounce.utils.extensions.tryJump
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.FloatValue
-import net.ccbluex.liquidbounce.value.ListValue
 
 object LongJump : Module("LongJump", Category.MOVEMENT) {
 
@@ -42,21 +38,18 @@ object LongJump : Module("LongJump", Category.MOVEMENT) {
 
     private val modes = longJumpModes.map { it.modeName }.toTypedArray()
 
-    val mode by ListValue("Mode", modes, "NCP")
-        val ncpBoost by FloatValue("NCPBoost", 4.25f, 1f..10f) { mode == "NCP" }
+    val mode by choices("Mode", modes, "NCP")
+    val ncpBoost by float("NCPBoost", 4.25f, 1f..10f) { mode == "NCP" }
 
-    private val autoJump by BoolValue("AutoJump", true)
+    private val autoJump by boolean("AutoJump", true)
 
-    val autoDisable by BoolValue("AutoDisable", true) { mode == "VerusDamage" }
+    val autoDisable by boolean("AutoDisable", true) { mode == "VerusDamage" }
 
     var jumped = false
     var canBoost = false
     var teleported = false
 
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
-        if (LadderJump.jumped) speed *= 1.08f
-
+    val onUpdate = handler<UpdateEvent> {
         if (jumped) {
             val mode = mode
 
@@ -67,14 +60,14 @@ object LongJump : Module("LongJump", Category.MOVEMENT) {
                     mc.thePlayer.motionX = 0.0
                     mc.thePlayer.motionZ = 0.0
                 }
-                return
+                return@handler
             }
 
             modeModule.onUpdate()
         }
-        if (autoJump && mc.thePlayer.onGround && isMoving) {
+        if (autoJump && mc.thePlayer.onGround && mc.thePlayer.isMoving) {
             if (autoDisable && !damaged) {
-                return
+                return@handler
             }
 
             jumped = true
@@ -82,23 +75,19 @@ object LongJump : Module("LongJump", Category.MOVEMENT) {
         }
     }
 
-    @EventTarget
-    fun onMove(event: MoveEvent) {
+    val onMove = handler<MoveEvent> { event ->
         modeModule.onMove(event)
     }
 
-    @EventTarget
     override fun onEnable() {
         modeModule.onEnable()
     }
 
-    @EventTarget
     override fun onDisable() {
         modeModule.onDisable()
     }
 
-    @EventTarget(ignoreCondition = true)
-    fun onJump(event: JumpEvent) {
+    val onJump = handler<JumpEvent>(always = true) { event ->
         jumped = true
         canBoost = true
         teleported = false

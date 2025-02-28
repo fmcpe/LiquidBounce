@@ -5,56 +5,51 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.combat
 
-import net.ccbluex.liquidbounce.event.EventTarget
+import net.ccbluex.liquidbounce.event.AttackEvent
 import net.ccbluex.liquidbounce.event.Render3DEvent
 import net.ccbluex.liquidbounce.event.UpdateEvent
+import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.Module
-import net.ccbluex.liquidbounce.utils.EntityUtils.isLookingOnEntities
-import net.ccbluex.liquidbounce.utils.EntityUtils.isSelected
+import net.ccbluex.liquidbounce.utils.attack.EntityUtils.isLookingOnEntities
+import net.ccbluex.liquidbounce.utils.attack.EntityUtils.isSelected
+import net.ccbluex.liquidbounce.utils.client.EntityLookup
 import net.ccbluex.liquidbounce.utils.extensions.fixedSensitivityPitch
 import net.ccbluex.liquidbounce.utils.extensions.fixedSensitivityYaw
 import net.ccbluex.liquidbounce.utils.extensions.getDistanceToEntityBox
 import net.ccbluex.liquidbounce.utils.extensions.isBlock
-import net.ccbluex.liquidbounce.utils.misc.RandomUtils
-import net.ccbluex.liquidbounce.utils.misc.RandomUtils.nextFloat
+import net.ccbluex.liquidbounce.utils.kotlin.RandomUtils
+import net.ccbluex.liquidbounce.utils.kotlin.RandomUtils.nextFloat
 import net.ccbluex.liquidbounce.utils.timing.TimeUtils.randomClickDelay
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.FloatValue
-import net.ccbluex.liquidbounce.value.IntegerValue
 import net.minecraft.client.settings.KeyBinding
 import net.minecraft.entity.Entity
+import net.minecraft.entity.EntityLivingBase
 import net.minecraft.item.EnumAction
+import net.minecraft.item.ItemBlock
 import kotlin.random.Random.Default.nextBoolean
 
-object AutoClicker : Module("AutoClicker", Category.COMBAT, hideModule = false) {
+object AutoClicker : Module("AutoClicker", Category.COMBAT) {
 
-    private val simulateDoubleClicking by BoolValue("SimulateDoubleClicking", false)
+    private val simulateDoubleClicking by boolean("SimulateDoubleClicking", false)
+    private val cps by intRange("CPS", 5..8, 1..50)
 
-    private val maxCPSValue: IntegerValue = object : IntegerValue("MaxCPS", 8, 1..20) {
-        override fun onChange(oldValue: Int, newValue: Int) = newValue.coerceAtLeast(minCPS)
-    }
-    private val maxCPS by maxCPSValue
+    private val hurtTime by int("HurtTime", 10, 0..10) { left }
 
-    private val minCPS by object : IntegerValue("MinCPS", 5, 1..20) {
-        override fun onChange(oldValue: Int, newValue: Int) = newValue.coerceAtMost(maxCPS)
+    private val right by boolean("Right", true)
+    private val left by boolean("Left", true)
+    private val jitter by boolean("Jitter", false)
+    private val block by boolean("AutoBlock", false) { left }
+    private val blockDelay by int("BlockDelay", 50, 0..100) { block }
 
-        override fun isSupported() = !maxCPSValue.isMinimal()
-    }
+    private val requiresNoInput by boolean("RequiresNoInput", false) { left }
+    private val maxAngleDifference by float("MaxAngleDifference", 30f, 10f..180f) { left && requiresNoInput }
+    private val range by float("Range", 3f, 0.1f..5f) { left && requiresNoInput }
 
-    private val right by BoolValue("Right", true)
-    private val left by BoolValue("Left", true)
-    private val jitter by BoolValue("Jitter", false)
-    private val block by BoolValue("AutoBlock", false) { left }
-    private val blockDelay by IntegerValue("BlockDelay", 50, 0..100) { block }
+    private val onlyBlocks by boolean("OnlyBlocks", true) { right }
 
-    private val requiresNoInput by BoolValue("RequiresNoInput", false) { left }
-    private val maxAngleDifference by FloatValue("MaxAngleDifference", 30f, 10f..180f) { left && requiresNoInput }
-    private val range by FloatValue("Range", 3f, 0.1f..5f) { left && requiresNoInput }
-
-    private var rightDelay = randomClickDelay(minCPS, maxCPS)
+    private var rightDelay = generateNewClickTime()
     private var rightLastSwing = 0L
-    private var leftDelay = randomClickDelay(minCPS, maxCPS)
+    private var leftDelay = generateNewClickTime()
     private var leftLastSwing = 0L
 
     private var lastBlocking = 0L
@@ -64,14 +59,23 @@ object AutoClicker : Module("AutoClicker", Category.COMBAT, hideModule = false) 
 
     private var shouldJitter = false
 
+    private var target: EntityLivingBase? = null
+
     override fun onDisable() {
         rightLastSwing = 0L
         leftLastSwing = 0L
         lastBlocking = 0L
+        target = null
     }
 
-    @EventTarget
-    fun onRender3D(event: Render3DEvent) {
+    val onAttack = handler<AttackEvent> { event ->
+        if (!left) return@handler
+        val targetEntity = event.targetEntity as EntityLivingBase
+
+        target = targetEntity
+    }
+
+    val onRender3D = handler<Render3DEvent> {
         mc.thePlayer?.let { thePlayer ->
             val time = System.currentTimeMillis()
             val doubleClick = if (simulateDoubleClicking) RandomUtils.nextInt(-1, 1) else 0
@@ -81,12 +85,14 @@ object AutoClicker : Module("AutoClicker", Category.COMBAT, hideModule = false) 
             }
 
             if (right && mc.gameSettings.keyBindUseItem.isKeyDown && time - rightLastSwing >= rightDelay) {
-                handleRightClick(time, doubleClick)
+                if (!onlyBlocks || thePlayer.heldItem?.item is ItemBlock) {
+                    handleRightClick(time, doubleClick)
+                }
             }
 
             if (requiresNoInput) {
-                val nearbyEntity = getNearestEntityInRange() ?: return
-                if (!isLookingOnEntities(nearbyEntity, maxAngleDifference.toDouble())) return
+                val nearbyEntity = getNearestEntityInRange() ?: return@handler
+                if (!isLookingOnEntities(nearbyEntity, maxAngleDifference.toDouble())) return@handler
 
                 if (left && shouldAutoClick && time - leftLastSwing >= leftDelay) {
                     handleLeftClick(time, doubleClick)
@@ -103,34 +109,43 @@ object AutoClicker : Module("AutoClicker", Category.COMBAT, hideModule = false) 
         }
     }
 
-    @EventTarget
-    fun onTick(event: UpdateEvent) {
+    val onTick = handler<UpdateEvent> {
         mc.thePlayer?.let { thePlayer ->
-            shouldJitter = !mc.objectMouseOver.typeOfHit.isBlock && (thePlayer.isSwingInProgress || mc.gameSettings.keyBindAttack.pressTime != 0)
 
-            if (jitter && ((left && shouldAutoClick && shouldJitter) || (right && !mc.thePlayer.isUsingItem && mc.gameSettings.keyBindUseItem.isKeyDown))) {
+            shouldJitter = !mc.objectMouseOver.typeOfHit.isBlock &&
+                    (thePlayer.isSwingInProgress || mc.gameSettings.keyBindAttack.pressTime != 0)
+
+            if (jitter && ((left && shouldAutoClick && shouldJitter)
+                        || (right && !thePlayer.isUsingItem && mc.gameSettings.keyBindUseItem.isKeyDown
+                        && ((onlyBlocks && thePlayer.heldItem.item is ItemBlock) || !onlyBlocks)))
+            ) {
+
                 if (nextBoolean()) thePlayer.fixedSensitivityYaw += nextFloat(-1F, 1F)
                 if (nextBoolean()) thePlayer.fixedSensitivityPitch += nextFloat(-1F, 1F)
             }
         }
     }
 
+    private val entities by EntityLookup<EntityLivingBase> {
+        isSelected(it, true) && mc.thePlayer.getDistanceToEntityBox(it) <= range
+    }
+
     private fun getNearestEntityInRange(): Entity? {
         val player = mc.thePlayer ?: return null
 
-        return mc.theWorld?.loadedEntityList?.filter { isSelected(it, true) }
-            ?.filter { player.getDistanceToEntityBox(it) <= range }
-            ?.minByOrNull { player.getDistanceToEntityBox(it) }
+        return entities.minByOrNull { player.getDistanceToEntityBox(it) }
     }
 
     private fun shouldAutoRightClick() = mc.thePlayer.heldItem?.itemUseAction in arrayOf(EnumAction.BLOCK)
 
     private fun handleLeftClick(time: Long, doubleClick: Int) {
+        if (target != null && target!!.hurtTime > hurtTime) return
+
         repeat(1 + doubleClick) {
             KeyBinding.onTick(mc.gameSettings.keyBindAttack.keyCode)
 
             leftLastSwing = time
-            leftDelay = randomClickDelay(minCPS, maxCPS)
+            leftDelay = generateNewClickTime()
         }
     }
 
@@ -139,7 +154,7 @@ object AutoClicker : Module("AutoClicker", Category.COMBAT, hideModule = false) 
             KeyBinding.onTick(mc.gameSettings.keyBindUseItem.keyCode)
 
             rightLastSwing = time
-            rightDelay = randomClickDelay(minCPS, maxCPS)
+            rightDelay = generateNewClickTime()
         }
     }
 
@@ -150,4 +165,6 @@ object AutoClicker : Module("AutoClicker", Category.COMBAT, hideModule = false) 
             lastBlocking = time
         }
     }
+
+    fun generateNewClickTime() = randomClickDelay(cps.first, cps.last)
 }

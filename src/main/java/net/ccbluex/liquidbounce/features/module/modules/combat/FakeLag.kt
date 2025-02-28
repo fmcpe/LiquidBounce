@@ -5,24 +5,26 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.combat
 
+import com.google.common.collect.Queues
 import net.ccbluex.liquidbounce.event.*
-import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.Category
+import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.features.module.modules.combat.Backtrack.runWithModifiedRotation
 import net.ccbluex.liquidbounce.features.module.modules.player.Blink
-import net.ccbluex.liquidbounce.features.module.modules.render.Breadcrumbs
-import net.ccbluex.liquidbounce.features.module.modules.world.scaffolds.*
+import net.ccbluex.liquidbounce.features.module.modules.world.scaffolds.Scaffold
 import net.ccbluex.liquidbounce.injection.implementations.IMixinEntity
-import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
-import net.ccbluex.liquidbounce.utils.Rotation
-import net.ccbluex.liquidbounce.utils.RotationUtils
+import net.ccbluex.liquidbounce.utils.client.PacketUtils.sendPacket
+import net.ccbluex.liquidbounce.utils.client.pos
 import net.ccbluex.liquidbounce.utils.extensions.*
-import net.ccbluex.liquidbounce.utils.render.ColorUtils.rainbow
+import net.ccbluex.liquidbounce.utils.kotlin.removeEach
+import net.ccbluex.liquidbounce.utils.render.RenderUtils
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.glColor
+import net.ccbluex.liquidbounce.utils.rotation.Rotation
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils
 import net.ccbluex.liquidbounce.utils.timing.MSTimer
-import net.ccbluex.liquidbounce.value.FloatValue
-import net.ccbluex.liquidbounce.value.IntegerValue
+import net.minecraft.client.entity.EntityPlayerSP
+import net.minecraft.client.gui.inventory.GuiContainer
 import net.minecraft.entity.player.EntityPlayer
-import net.minecraft.network.Packet
 import net.minecraft.network.handshake.client.C00Handshake
 import net.minecraft.network.play.client.*
 import net.minecraft.network.play.server.S08PacketPlayerPosLook
@@ -34,128 +36,139 @@ import net.minecraft.network.status.server.S01PacketPong
 import net.minecraft.util.Vec3
 import org.lwjgl.opengl.GL11.*
 import java.awt.Color
+import java.util.*
+import kotlin.math.min
 
-object FakeLag : Module("FakeLag", Category.COMBAT, gameDetecting = false, hideModule = false) {
+object FakeLag : Module("FakeLag", Category.COMBAT, gameDetecting = false) {
 
-    private val delay by IntegerValue("Delay", 550, 0..1000)
-    private val recoilTime by IntegerValue("RecoilTime", 750, 0..2000)
-    private val distanceToPlayers by FloatValue("AllowedDistanceToPlayers", 3.5f, 0.0f..6.0f)
+    private val delay by int("Delay", 550, 0..1000)
+    private val recoilTime by int("RecoilTime", 750, 0..2000)
 
-    private val packetQueue = LinkedHashMap<Packet<*>, Long>()
-    private val positions = LinkedHashMap<Vec3, Long>()
+    private val allowedDistToEnemy by floatRange("MinAllowedDistToEnemy", 1.5f..3.5f, 0f..6f)
+
+    private val blinkOnAction by boolean("BlinkOnAction", true)
+
+    private val pauseOnNoMove by boolean("PauseOnNoMove", true)
+    private val pauseOnChest by boolean("PauseOnChest", false)
+
+    private val line by boolean("Line", true).subjective()
+    private val lineColor by color("LineColor", Color.GREEN) { line }.subjective()
+
+    private val renderModel by boolean("RenderModel", false).subjective()
+
+    private val packetQueue = Queues.newArrayDeque<QueueData>()
+    private val positions = Queues.newArrayDeque<PositionData>()
     private val resetTimer = MSTimer()
-    private var wasNearPlayer = false
+    private var wasNearEnemy = false
     private var ignoreWholeTick = false
 
+    private var renderData = ModelRenderData(Vec3_ZERO, Rotation.ZERO)
+
     override fun onDisable() {
-        if (mc.thePlayer == null)
-            return
+        if (mc.thePlayer == null) return
 
         blink()
     }
 
-    @EventTarget
-    fun onPacket(event: PacketEvent) {
+    val onPacket = handler<PacketEvent> { event ->
+        val player = mc.thePlayer ?: return@handler
         val packet = event.packet
 
-        if (!handleEvents())
-            return
+        if (!handleEvents() || player.isDead || event.isCancelled || allowedDistToEnemy.endInclusive > 0.0 && wasNearEnemy || ignoreWholeTick) {
+            return@handler
+        }
 
-        if (mc.thePlayer == null || mc.thePlayer.isDead)
-            return
+        if (pauseOnNoMove && !player.isMoving) {
+            blink()
+            return@handler
+        }
 
-        if (event.isCancelled)
-            return
-
-        if (distanceToPlayers > 0.0 && wasNearPlayer)
-            return
-
-        if (ignoreWholeTick)
-            return
-
-        // Check if player got damaged
-        if (mc.thePlayer.health < mc.thePlayer.maxHealth) {
-            if (mc.thePlayer.hurtTime != 0) {
+        // Flush on damaged received
+        if (player.health < player.maxHealth) {
+            if (player.hurtTime != 0) {
                 blink()
-                return
+                return@handler
             }
         }
 
-        // Proper check to prevent FakeLag while using Scaffold
-        if (Scaffold.handleEvents() && (Tower.placeInfo != null || Scaffold.placeRotation != null)) {
+        // Flush on scaffold/tower usage
+        if (Scaffold.handleEvents() && Scaffold.placeRotation != null) {
             blink()
-            return
+            return@handler
+        }
+
+        // Flush on attack/interact
+        if (blinkOnAction && packet is C02PacketUseEntity) {
+            blink()
+            return@handler
+        }
+
+        if (pauseOnChest && mc.currentScreen is GuiContainer) {
+            blink()
+            return@handler
         }
 
         when (packet) {
-            is C00Handshake, is C00PacketServerQuery, is C01PacketPing, is C01PacketChatMessage, is S01PacketPong -> return
+            is C00Handshake, is C00PacketServerQuery, is C01PacketPing, is C01PacketChatMessage, is S01PacketPong -> return@handler
 
             // Flush on window clicked (Inventory)
             is C0EPacketClickWindow, is C0DPacketCloseWindow -> {
                 blink()
-                return
+                return@handler
             }
 
-            // Flush on doing action, getting action
-            is S08PacketPlayerPosLook, is C08PacketPlayerBlockPlacement, is C07PacketPlayerDigging, is C12PacketUpdateSign, is C02PacketUseEntity, is C19PacketResourcePackStatus -> {
+            // Flush on doing action/getting action
+            is S08PacketPlayerPosLook, is C08PacketPlayerBlockPlacement, is C07PacketPlayerDigging, is C12PacketUpdateSign, is C19PacketResourcePackStatus -> {
                 blink()
-                return
+                return@handler
             }
 
-            // Flush on kb
+            // Flush on knockback
             is S12PacketEntityVelocity -> {
-                if (mc.thePlayer.entityId == packet.entityID) {
+                if (player.entityId == packet.entityID) {
                     blink()
-                    return
+                    return@handler
                 }
             }
 
             is S27PacketExplosion -> {
                 if (packet.field_149153_g != 0f || packet.field_149152_f != 0f || packet.field_149159_h != 0f) {
                     blink()
-                    return
+                    return@handler
                 }
             }
-
-            /*
-             * Temporarily disabled (It seems like it only detects when player is healing??)
-             * And "packet.health < mc.thePlayer.health" check doesn't really work.
-             */
-
-            // Flush on damage
-//            is S06PacketUpdateHealth -> {
-//                if (packet.health < mc.thePlayer.health) {
-//                    blink()
-//                    return
-//                }
-//            }
         }
 
-        if (!resetTimer.hasTimePassed(recoilTime))
-            return
+        if (!resetTimer.hasTimePassed(recoilTime)) return@handler
+
+        if (mc.isSingleplayer || mc.currentServerData == null) {
+            blink()
+            return@handler
+        }
 
         if (event.eventType == EventState.SEND) {
             event.cancelEvent()
+
             if (packet is C03PacketPlayer && packet.isMoving) {
-                val packetPos = Vec3(packet.x, packet.y, packet.z)
                 synchronized(positions) {
-                    positions[packetPos] = System.currentTimeMillis()
-                }
-                if (packet.rotating) {
-                    RotationUtils.serverRotation = Rotation(packet.yaw, packet.pitch)
+                    positions += PositionData(
+                        packet.pos,
+                        System.currentTimeMillis(),
+                        player.renderYawOffset,
+                        RotationUtils.serverRotation
+                    )
                 }
             }
+
             synchronized(packetQueue) {
-                packetQueue[packet] = System.currentTimeMillis()
+                packetQueue += QueueData(packet, System.currentTimeMillis())
             }
         }
     }
 
-    @EventTarget
-    fun onWorld(event: WorldEvent) {
+    val onWorld = handler<WorldEvent> { event ->
         // Clear packets on disconnect only
-        if (event.worldClient == null)
-            blink(false)
+        if (event.worldClient == null) blink(false)
     }
 
     private fun getTruePositionEyes(player: EntityPlayer): Vec3 {
@@ -163,56 +176,57 @@ object FakeLag : Module("FakeLag", Category.COMBAT, gameDetecting = false, hideM
         return Vec3(mixinPlayer!!.trueX, mixinPlayer.trueY + player.getEyeHeight().toDouble(), mixinPlayer.trueZ)
     }
 
-    @EventTarget
-    fun onGameLoop(event: GameLoopEvent) {
-        val thePlayer = mc.thePlayer ?: return
+    val onGameLoop = handler<GameLoopEvent> {
+        val player = mc.thePlayer ?: return@handler
+        val world = mc.theWorld ?: return@handler
 
-        if (distanceToPlayers > 0) {
-            val playerPos = thePlayer.positionVector
-            val serverPos = positions.keys.firstOrNull() ?: playerPos
+        if (allowedDistToEnemy.endInclusive > 0) {
+            val playerPos = player.currPos
+            val serverPos = positions.firstOrNull()?.pos ?: playerPos
 
-            val otherPlayers = mc.theWorld.playerEntities.filter { it != thePlayer }
+            val playerBox = player.hitBox.offset(serverPos - playerPos)
 
-            val (dx, dy, dz) = serverPos - playerPos
-            val playerBox = thePlayer.hitBox.offset(dx, dy, dz)
+            wasNearEnemy = false
 
-            wasNearPlayer = false
+            world.playerEntities.forEach { otherPlayer ->
+                if (otherPlayer == player) return@forEach
 
-            for (otherPlayer in otherPlayers) {
                 val entityMixin = otherPlayer as? IMixinEntity
+
                 if (entityMixin != null) {
                     val eyes = getTruePositionEyes(otherPlayer)
-                    if (eyes.distanceTo(getNearestPointBB(eyes, playerBox)) <= distanceToPlayers.toDouble()) {
+
+                    if (eyes.distanceTo(getNearestPointBB(eyes, playerBox)) in allowedDistToEnemy) {
                         blink()
-                        wasNearPlayer = true
-                        return
+                        wasNearEnemy = true
+                        return@handler
                     }
                 }
             }
         }
 
-        if (Blink.blinkingSend() || mc.thePlayer.isDead || thePlayer.isUsingItem) {
+        if (Blink.blinkingSend() || player.isDead || player.isUsingItem) {
             blink()
-            return
+            return@handler
         }
 
-        if (!resetTimer.hasTimePassed(recoilTime))
-            return
+        if (!resetTimer.hasTimePassed(recoilTime)) return@handler
 
         handlePackets()
         ignoreWholeTick = false
     }
 
-    @EventTarget
-    fun onRender3D(event: Render3DEvent) {
-        val color =
-            if (Breadcrumbs.colorRainbow) rainbow()
-            else Color(Breadcrumbs.colorRed, Breadcrumbs.colorGreen, Breadcrumbs.colorBlue)
+    val onRender3D = handler<Render3DEvent> { event ->
+        val player = mc.thePlayer ?: return@handler
 
-        if (Blink.blinkingSend())
-            return
+        if (Blink.blinkingSend() || positions.isEmpty()) {
+            renderData.reset(player)
+            return@handler
+        }
 
-        synchronized(positions.keys) {
+        renderData.update(positions)
+
+        if (line) {
             glPushMatrix()
             glDisable(GL_TEXTURE_2D)
             glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
@@ -221,14 +235,15 @@ object FakeLag : Module("FakeLag", Category.COMBAT, gameDetecting = false, hideM
             glDisable(GL_DEPTH_TEST)
             mc.entityRenderer.disableLightmap()
             glBegin(GL_LINE_STRIP)
-            glColor(color)
+            glColor(lineColor)
 
             val renderPosX = mc.renderManager.viewerPosX
             val renderPosY = mc.renderManager.viewerPosY
             val renderPosZ = mc.renderManager.viewerPosZ
 
-            for (pos in positions.keys)
-                glVertex3d(pos.xCoord - renderPosX, pos.yCoord - renderPosY, pos.zCoord - renderPosZ)
+            for ((pos) in positions) glVertex3d(
+                pos.xCoord - renderPosX, pos.yCoord - renderPosY, pos.zCoord - renderPosZ
+            )
 
             glColor4d(1.0, 1.0, 1.0, 1.0)
             glEnd()
@@ -238,29 +253,50 @@ object FakeLag : Module("FakeLag", Category.COMBAT, gameDetecting = false, hideM
             glEnable(GL_TEXTURE_2D)
             glPopMatrix()
         }
+
+        // A pretty basic model render process. Position and rotation interpolation is applied to look visually appealing to the user.
+        // This can be smarter by adding sneak checks, more timed hand swing/body movement, etc.
+        if (mc.gameSettings.thirdPersonView == 0 || renderModel) return@handler
+
+        val manager = mc.renderManager
+
+        glPushMatrix()
+        glPushAttrib(GL_ALL_ATTRIB_BITS)
+
+        RenderUtils.glColor(Color.BLACK)
+
+        val (old, new) = positions.first() to positions.elementAt(min(1, positions.size - 1))
+
+        val pos = renderData.pos - manager.renderPos
+
+        runWithModifiedRotation(player, renderData.rotation, old.body to new.body) {
+            manager.doRenderEntity(
+                player, pos.xCoord, pos.yCoord, pos.zCoord, it.yaw, event.partialTicks, true
+            )
+        }
+
+        glPopAttrib()
+        glPopMatrix()
     }
 
     override val tag
         get() = packetQueue.size.toString()
 
     private fun blink(handlePackets: Boolean = true) {
-        synchronized(packetQueue) {
+        mc.addScheduledTask {
             if (handlePackets) {
                 resetTimer.reset()
-
-                packetQueue.forEach { (packet) -> sendPacket(packet, false) }
             }
-        }
 
-        packetQueue.clear()
-        positions.clear()
-        ignoreWholeTick = true
+            handlePackets(true)
+            ignoreWholeTick = true
+        }
     }
 
-    private fun handlePackets() {
+    private fun handlePackets(clear: Boolean = false) {
         synchronized(packetQueue) {
-            packetQueue.entries.removeAll { (packet, timestamp) ->
-                if (timestamp <= System.currentTimeMillis() - delay) {
+            packetQueue.removeEach { (packet, timestamp) ->
+                if (timestamp <= System.currentTimeMillis() - delay || clear) {
                     sendPacket(packet, false)
                     true
                 } else false
@@ -268,8 +304,24 @@ object FakeLag : Module("FakeLag", Category.COMBAT, gameDetecting = false, hideM
         }
 
         synchronized(positions) {
-            positions.entries.removeAll { (_, timestamp) -> timestamp <= System.currentTimeMillis() - delay }
+            positions.removeEach { (_, timestamp) -> timestamp <= System.currentTimeMillis() - delay || clear }
         }
     }
 
 }
+
+data class ModelRenderData(var pos: Vec3, var rotation: Rotation) {
+    fun reset(player: EntityPlayerSP) {
+        pos = player.currPos
+        rotation = RotationUtils.serverRotation
+    }
+
+    fun update(positions: ArrayDeque<PositionData>) {
+        val data = positions.first()
+
+        pos = pos.lerpWith(data.pos, RenderUtils.deltaTimeNormalized(3))
+        rotation = rotation.lerpWith(data.rotation, RenderUtils.deltaTimeNormalized(1))
+    }
+}
+
+data class PositionData(val pos: Vec3, val time: Long, val body: Float, val rotation: Rotation)

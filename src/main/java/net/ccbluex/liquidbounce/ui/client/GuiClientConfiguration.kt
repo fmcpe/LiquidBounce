@@ -5,53 +5,36 @@
  */
 package net.ccbluex.liquidbounce.ui.client
 
-import net.ccbluex.liquidbounce.LiquidBounce.clientTitle
 import net.ccbluex.liquidbounce.LiquidBounce.background
 import net.ccbluex.liquidbounce.file.FileManager.backgroundImageFile
 import net.ccbluex.liquidbounce.file.FileManager.backgroundShaderFile
 import net.ccbluex.liquidbounce.file.FileManager.saveConfig
 import net.ccbluex.liquidbounce.file.FileManager.valuesConfig
+import net.ccbluex.liquidbounce.file.configs.models.ClientConfiguration.altsLength
+import net.ccbluex.liquidbounce.file.configs.models.ClientConfiguration.altsPrefix
+import net.ccbluex.liquidbounce.file.configs.models.ClientConfiguration.clientTitle
+import net.ccbluex.liquidbounce.file.configs.models.ClientConfiguration.customBackground
+import net.ccbluex.liquidbounce.file.configs.models.ClientConfiguration.overrideLanguage
+import net.ccbluex.liquidbounce.file.configs.models.ClientConfiguration.particles
+import net.ccbluex.liquidbounce.file.configs.models.ClientConfiguration.stylisedAlts
+import net.ccbluex.liquidbounce.file.configs.models.ClientConfiguration.unformattedAlts
+import net.ccbluex.liquidbounce.file.configs.models.ClientConfiguration.updateClientWindow
 import net.ccbluex.liquidbounce.lang.LanguageManager
 import net.ccbluex.liquidbounce.lang.translationMenu
 import net.ccbluex.liquidbounce.ui.font.Fonts
-import net.ccbluex.liquidbounce.utils.Background
-import net.ccbluex.liquidbounce.utils.MinecraftInstance.Companion.mc
-import net.ccbluex.liquidbounce.utils.misc.MiscUtils
-import net.ccbluex.liquidbounce.utils.render.IconUtils
+import net.ccbluex.liquidbounce.utils.io.FileFilters
+import net.ccbluex.liquidbounce.utils.io.MiscUtils
+import net.ccbluex.liquidbounce.utils.io.MiscUtils.showErrorPopup
+import net.ccbluex.liquidbounce.utils.io.MiscUtils.showMessageDialog
+import net.ccbluex.liquidbounce.utils.render.shader.Background
+import net.ccbluex.liquidbounce.utils.ui.AbstractScreen
 import net.minecraft.client.gui.GuiButton
 import net.minecraft.client.gui.GuiScreen
+import net.minecraft.client.gui.GuiTextField
 import net.minecraftforge.fml.client.config.GuiSlider
 import org.lwjgl.input.Keyboard
-import org.lwjgl.opengl.Display
-import java.nio.file.Files
 
-class GuiClientConfiguration(val prevGui: GuiScreen) : GuiScreen() {
-
-    companion object {
-        var enabledClientTitle = true
-        var enabledCustomBackground = true
-        var particles = false
-        var stylisedAlts = true
-        var unformattedAlts = false
-        var altsLength = 16
-
-        fun updateClientWindow() {
-            if (enabledClientTitle) {
-                // Set LiquidBounce title
-                Display.setTitle(clientTitle)
-                // Update favicon
-                IconUtils.getFavicon()?.let { icons ->
-                    Display.setIcon(icons)
-                }
-            } else {
-                // Set original title
-                Display.setTitle("Minecraft 1.8.9")
-                // Update favicon
-                mc.setWindowIcon()
-            }
-        }
-
-    }
+class GuiClientConfiguration(val prevGui: GuiScreen) : AbstractScreen() {
 
     private lateinit var languageButton: GuiButton
 
@@ -63,154 +46,214 @@ class GuiClientConfiguration(val prevGui: GuiScreen) : GuiScreen() {
 
     private lateinit var titleButton: GuiButton
 
+    private lateinit var altPrefixField: GuiTextField
+
     override fun initGui() {
-        buttonList.run {
-            clear()
+        // Title button
+        // Location > 1st row
+        titleButton = +GuiButton(
+            4, width / 2 - 100, height / 4 + 25, "Client title (${if (clientTitle) "On" else "Off"})"
+        )
 
-            // Title button
-            // Location > 1st row
-            add(GuiButton(5, width / 2 - 100, height / 4 + 25, "Client title (${if (enabledClientTitle) "On" else "Off"})").also { titleButton = it })
-            add(GuiButton(8, width / 2 - 100, height / 4 + 50, "Language (${LanguageManager.overrideLanguage.ifBlank { "Game" }})").also { languageButton = it })
+        languageButton = +GuiButton(
+            7,
+            width / 2 - 100,
+            height / 4 + 50,
+            "Language (${overrideLanguage.ifBlank { "Game" }})"
+        )
 
-            // Background configuration buttons
-            // Button location > 2nd row
-            add(GuiButton(1, width / 2 - 100, height / 4 + 25 + 75, "Enabled background (${if (enabledCustomBackground) "On" else "Off"})").also { backgroundButton = it })
-            add(GuiButton(2, width / 2 - 100, height / 4 + 25 + 75 + 25, "Particles (${if (particles) "On" else "Off"})").also { particlesButton = it })
-            add(GuiButton(3, width / 2 - 100, height / 4 + 25 + 75 + 25 * 2, 98, 20, "Change wallpaper"))
-            add(GuiButton(4, width / 2 + 2, height / 4 + 25 + 75 + 25 * 2, 98, 20, "Reset wallpaper"))
+        // Background configuration buttons
+        // Button location > 2nd row
+        backgroundButton = +GuiButton(
+            0,
+            width / 2 - 100,
+            height / 4 + 25 + 75,
+            "Enabled (${if (customBackground) "On" else "Off"})"
+        )
 
-            // AltManager configuration buttons
-            // Location > 3rd row
-            add(GuiButton(7, width / 2 - 100, height / 4 + 25 + 185, "Random alts mode (${if (stylisedAlts) "Stylised" else "Legacy"})").also { altsModeButton = it })
-            add(GuiSlider(-1, width / 2 - 100, height / 4 + 210 + 25, 200, 20, "${if (stylisedAlts && unformattedAlts) "Random alt max" else "Random alt"} length (", ")", 6.0, 16.0, altsLength.toDouble(), false, true) {
-                altsLength = it.valueInt
-            }.also { altsSlider = it })
-            add(GuiButton(6, width / 2 - 100, height / 4 + 235 + 25, "Unformatted alt names (${if (unformattedAlts) "On" else "Off"})").also {
-                it.enabled = stylisedAlts
-                unformattedAltsButton = it
-            })
+        particlesButton = +GuiButton(
+            1, width / 2 - 100, height / 4 + 25 + 75 + 25, "Particles (${if (particles) "On" else "Off"})"
+        )
 
-            // Back button
-            add(GuiButton(0, width / 2 - 100, height / 4 + 25 + 25 * 11, "Back"))
+        +GuiButton(2, width / 2 - 100, height / 4 + 25 + 75 + 25 * 2, 98, 20, "Change wallpaper")
+
+        +GuiButton(3, width / 2 + 2, height / 4 + 25 + 75 + 25 * 2, 98, 20, "Reset wallpaper")
+
+        // AltManager configuration buttons
+        // Location > 3rd row
+        altsModeButton = +GuiButton(
+            6,
+            width / 2 - 100,
+            height / 4 + 25 + 185,
+            "Random alts mode (${if (stylisedAlts) "Stylised" else "Legacy"})"
+        )
+
+        altsSlider = +GuiSlider(
+            -1,
+            width / 2 - 100,
+            height / 4 + 210 + 25,
+            200,
+            20,
+            "${if (stylisedAlts && unformattedAlts) "Random alt max" else "Random alt"} length (",
+            ")",
+            6.0,
+            16.0,
+            altsLength.toDouble(),
+            false,
+            true
+        ) {
+            altsLength = it.valueInt
         }
+
+        unformattedAltsButton = +GuiButton(
+            5,
+            width / 2 - 100,
+            height / 4 + 235 + 25,
+            "Unformatted alt names (${if (unformattedAlts) "On" else "Off"})"
+        ).also {
+            it.enabled = stylisedAlts
+        }
+
+        altPrefixField = GuiTextField(2, Fonts.fontSemibold35, width / 2 - 100, height / 4 + 260 + 25, 200, 20)
+        altPrefixField.maxStringLength = 16
+
+        // Back button
+        +GuiButton(8, width / 2 - 100, height / 4 + 25 + 25 + 25 * 11, "Back")
     }
 
     override fun actionPerformed(button: GuiButton) {
         when (button.id) {
-            1 -> {
-                enabledCustomBackground = !enabledCustomBackground
-                backgroundButton.displayString = "Enabled (${if (enabledCustomBackground) "On" else "Off"})"
+            0 -> {
+                customBackground = !customBackground
+                backgroundButton.displayString = "Enabled (${if (customBackground) "On" else "Off"})"
             }
-            2 -> {
+
+            1 -> {
                 particles = !particles
                 particlesButton.displayString = "Particles (${if (particles) "On" else "Off"})"
             }
-            5 -> {
-                enabledClientTitle = !enabledClientTitle
-                titleButton.displayString = "Client title (${if (enabledClientTitle) "On" else "Off"})"
+
+            4 -> {
+                clientTitle = !clientTitle
+                titleButton.displayString = "Client title (${if (clientTitle) "On" else "Off"})"
                 updateClientWindow()
             }
-            6 -> {
+
+            5 -> {
                 unformattedAlts = !unformattedAlts
                 unformattedAltsButton.displayString = "Unformatted alt names (${if (unformattedAlts) "On" else "Off"})"
                 altsSlider.dispString = "${if (unformattedAlts) "Max random alt" else "Random alt"} length ("
                 altsSlider.updateSlider()
             }
-            7 -> {
+
+            6 -> {
                 stylisedAlts = !stylisedAlts
                 altsModeButton.displayString = "Random alts mode (${if (stylisedAlts) "Stylised" else "Legacy"})"
-                altsSlider.dispString = "${if (stylisedAlts && unformattedAlts) "Max random alt" else "Random alt"} length ("
+                altsSlider.dispString =
+                    "${if (stylisedAlts && unformattedAlts) "Max random alt" else "Random alt"} length ("
                 altsSlider.updateSlider()
                 unformattedAltsButton.enabled = stylisedAlts
             }
-            3 -> {
-                val file = MiscUtils.openFileChooser() ?: return
 
-                if (file.isDirectory)
-                    return
+            2 -> {
+                val file = MiscUtils.openFileChooser(FileFilters.IMAGE, FileFilters.SHADER) ?: return
 
                 // Delete old files
                 background = null
-                backgroundImageFile.delete()
-                backgroundShaderFile.delete()
+                if (backgroundImageFile.exists()) backgroundImageFile.deleteRecursively()
+                if (backgroundShaderFile.exists()) backgroundShaderFile.deleteRecursively()
 
                 // Copy new file
                 val fileExtension = file.extension
 
-                try {
-                    val destFile =  when (fileExtension) {
+                background = try {
+                    val destFile = when (fileExtension.lowercase()) {
                         "png" -> backgroundImageFile
                         "frag", "glsl", "shader" -> backgroundShaderFile
                         else -> {
-                            MiscUtils.showErrorPopup("Error", "Invalid file extension: $fileExtension")
+                            showMessageDialog("Error", "Invalid file extension: $fileExtension")
                             return
                         }
                     }
 
-                    Files.copy(file.toPath(), destFile.outputStream())
+                    file.copyTo(destFile)
 
                     // Load new background
-                    try {
-                        background = Background.createBackground(destFile)
-                    } catch (e: IllegalArgumentException) {
-                        background = null
-                        backgroundImageFile.delete()
-                        backgroundShaderFile.delete()
-
-                        MiscUtils.showErrorPopup("Error", "Invalid file extension: $fileExtension")
-                    }
+                    Background.fromFile(destFile)
                 } catch (e: Exception) {
-                    e.printStackTrace()
-                    MiscUtils.showErrorPopup("Error", "Exception class: " + e.javaClass.name + "\nMessage: " + e.message)
-
-                    background = null
-                    backgroundImageFile.delete()
-                    backgroundShaderFile.delete()
+                    e.showErrorPopup()
+                    if (backgroundImageFile.exists()) backgroundImageFile.deleteRecursively()
+                    if (backgroundShaderFile.exists()) backgroundShaderFile.deleteRecursively()
+                    null
                 }
             }
-            4 -> {
-                background = null
-                backgroundImageFile.delete()
-                backgroundShaderFile.delete()
-            }
-            8 -> {
-                val languageIndex = LanguageManager.knownLanguages.indexOf(LanguageManager.overrideLanguage)
 
-                // If the language is not found, set it to the first language
-                if (languageIndex == -1) {
-                    LanguageManager.overrideLanguage = LanguageManager.knownLanguages.first()
-                } else {
-                    // If the language is the last one, set it to blank
-                    if (languageIndex == LanguageManager.knownLanguages.size - 1) {
-                        LanguageManager.overrideLanguage = ""
-                    } else {
+            3 -> {
+                background = null
+                if (backgroundImageFile.exists()) backgroundImageFile.deleteRecursively()
+                if (backgroundShaderFile.exists()) backgroundShaderFile.deleteRecursively()
+            }
+
+            7 -> {
+                val languageIndex = LanguageManager.knownLanguages.indexOf(overrideLanguage)
+
+                overrideLanguage = when (languageIndex) {
+                    -1 -> {
+                        // If the language is not found, set it to the first language
+                        LanguageManager.knownLanguages.first()
+                    }
+                    LanguageManager.knownLanguages.size - 1 -> {
+                        // If the language is the last one, set it to blank
+                        ""
+                    }
+                    else -> {
                         // Otherwise, set it to the next language
-                        LanguageManager.overrideLanguage = LanguageManager.knownLanguages[languageIndex + 1]
+                        LanguageManager.knownLanguages[languageIndex + 1]
                     }
                 }
 
-                initGui()
+                languageButton.displayString = "Language (${overrideLanguage.ifBlank { "Game" }})"
             }
-            0 -> mc.displayGuiScreen(prevGui)
+
+            8 -> mc.displayGuiScreen(prevGui)
         }
     }
 
     override fun drawScreen(mouseX: Int, mouseY: Int, partialTicks: Float) {
         drawBackground(0)
         Fonts.fontBold180.drawCenteredString(
-            translationMenu("configuration"), width / 2F, height / 8F + 5F,
-                4673984, true)
+            translationMenu("configuration"), width / 2F, height / 8F + 5F, 4673984, true
+        )
 
-        Fonts.font40.drawString("Window", width / 2F - 98F, height / 4F + 15F,
-            0xFFFFFF, true)
+        Fonts.fontSemibold40.drawString(
+            "Window", width / 2F - 98F, height / 4F + 15F, 0xFFFFFF, true
+        )
 
-        Fonts.font40.drawString("Background", width / 2F - 98F, height / 4F + 90F,
-            0xFFFFFF, true)
-        Fonts.font35.drawString("Supported background types: (.png, .frag, .glsl)", width / 2F - 98F, height / 4F + 100 + 25 * 3,
-            0xFFFFFF, true)
+        Fonts.fontSemibold40.drawString(
+            "Background", width / 2F - 98F, height / 4F + 90F, 0xFFFFFF, true
+        )
+        Fonts.fontSemibold35.drawString(
+            "Supported background types: (.png, .frag, .glsl)",
+            width / 2F - 98F,
+            height / 4F + 100 + 25 * 3,
+            0xFFFFFF,
+            true
+        )
 
-        Fonts.font40.drawString(translationMenu("altManager"), width / 2F - 98F, height / 4F + 200F,
-            0xFFFFFF, true)
+        Fonts.fontSemibold40.drawString(
+            translationMenu("altManager"), width / 2F - 98F, height / 4F + 200F, 0xFFFFFF, true
+        )
+
+        altPrefixField.drawTextBox()
+        if (altPrefixField.text.isEmpty() && !altPrefixField.isFocused) {
+            Fonts.fontSemibold35.drawStringWithShadow(
+                altsPrefix.ifEmpty { translationMenu("altManager.typeCustomPrefix") },
+                altPrefixField.xPosition + 4f,
+                altPrefixField.yPosition + (altPrefixField.height - Fonts.fontSemibold35.FONT_HEIGHT) / 2F,
+                0xffffff
+            )
+        }
+
         super.drawScreen(mouseX, mouseY, partialTicks)
     }
 
@@ -220,7 +263,18 @@ class GuiClientConfiguration(val prevGui: GuiScreen) : GuiScreen() {
             return
         }
 
+        if (altPrefixField.isFocused) {
+            altPrefixField.textboxKeyTyped(typedChar, keyCode)
+            altsPrefix = altPrefixField.text
+            saveConfig(valuesConfig)
+        }
+
         super.keyTyped(typedChar, keyCode)
+    }
+
+    public override fun mouseClicked(mouseX: Int, mouseY: Int, mouseButton: Int) {
+        altPrefixField.mouseClicked(mouseX, mouseY, mouseButton)
+        super.mouseClicked(mouseX, mouseY, mouseButton)
     }
 
     override fun onGuiClosed() {

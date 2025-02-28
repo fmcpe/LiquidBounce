@@ -5,41 +5,49 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.movement
 
-import net.ccbluex.liquidbounce.LiquidBounce.moduleManager
 import net.ccbluex.liquidbounce.event.*
-import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.Category
+import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.modules.exploit.Phase
-import net.ccbluex.liquidbounce.utils.MovementUtils.direction
-import net.ccbluex.liquidbounce.utils.MovementUtils.isMoving
-import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
-import net.ccbluex.liquidbounce.utils.PacketUtils.sendPackets
+import net.ccbluex.liquidbounce.utils.block.BlockUtils
+import net.ccbluex.liquidbounce.utils.client.PacketUtils.sendPacket
+import net.ccbluex.liquidbounce.utils.client.PacketUtils.sendPackets
+import net.ccbluex.liquidbounce.utils.extensions.isInLiquid
+import net.ccbluex.liquidbounce.utils.extensions.isMoving
 import net.ccbluex.liquidbounce.utils.extensions.tryJump
+import net.ccbluex.liquidbounce.utils.movement.MovementUtils.direction
+import net.ccbluex.liquidbounce.utils.movement.MovementUtils.strafe
 import net.ccbluex.liquidbounce.utils.timing.MSTimer
-import net.ccbluex.liquidbounce.value.FloatValue
-import net.ccbluex.liquidbounce.value.IntegerValue
-import net.ccbluex.liquidbounce.value.ListValue
+import net.ccbluex.liquidbounce.utils.timing.WaitTickUtils
+import net.minecraft.init.Blocks.*
 import net.minecraft.network.play.client.C03PacketPlayer
 import net.minecraft.network.play.client.C03PacketPlayer.C04PacketPlayerPosition
 import net.minecraft.stats.StatList
 import kotlin.math.cos
 import kotlin.math.sin
 
-object Step : Module("Step", Category.MOVEMENT, gameDetecting = false, hideModule = false) {
+object Step : Module("Step", Category.MOVEMENT, gameDetecting = false) {
 
     /**
      * OPTIONS
      */
 
-    private val mode by ListValue("Mode",
-        arrayOf("Vanilla", "Jump", "NCP", "MotionNCP", "OldNCP", "AAC", "LAAC", "AAC3.3.4", "Spartan", "Rewinside"), "NCP")
+    private val mode by choices(
+        "Mode",
+        arrayOf(
+            "Vanilla", "Jump", "NCP", "MotionNCP",
+            "OldNCP", "AAC", "LAAC", "AAC3.3.4",
+            "Spartan", "Rewinside", "BlocksMCTimer"
+        ),
+        "NCP"
+    )
 
-        private val height by FloatValue("Height", 1F, 0.6F..10F)
-            { mode !in arrayOf("Jump", "MotionNCP", "LAAC", "AAC3.3.4") }
-        private val jumpHeight by FloatValue("JumpHeight", 0.42F, 0.37F..0.42F)
-            { mode == "Jump" }
+    private val height by float("Height", 1F, 0.6F..10F)
+    { mode !in arrayOf("Jump", "MotionNCP", "LAAC", "AAC3.3.4", "BlocksMCTimer") }
+    private val jumpHeight by float("JumpHeight", 0.42F, 0.37F..0.42F)
+    { mode == "Jump" }
 
-    private val delay by IntegerValue("Delay", 0, 0..500)
+    private val delay by int("Delay", 0, 0..500)
 
     /**
      * VALUES
@@ -63,10 +71,13 @@ object Step : Module("Step", Category.MOVEMENT, gameDetecting = false, hideModul
         thePlayer.stepHeight = 0.6F
     }
 
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
+    val onUpdate = handler<UpdateEvent> {
         val mode = mode
-        val thePlayer = mc.thePlayer ?: return
+        val thePlayer = mc.thePlayer ?: return@handler
+
+        if (thePlayer.isOnLadder || thePlayer.isInLiquid || thePlayer.isInWeb) return@handler
+
+        if (!thePlayer.isMoving) return@handler
 
         // Motion steps
         when (mode) {
@@ -75,8 +86,35 @@ object Step : Module("Step", Category.MOVEMENT, gameDetecting = false, hideModul
                     fakeJump()
                     thePlayer.motionY = jumpHeight.toDouble()
                 }
+
+            "BlocksMCTimer" ->
+                if (thePlayer.onGround && thePlayer.isCollidedHorizontally) {
+                    val chest = BlockUtils.searchBlocks(2, setOf(chest, ender_chest, trapped_chest))
+
+                    if (!couldStep() || chest.isNotEmpty()) {
+                        mc.timer.timerSpeed = 1f
+                        return@handler
+                    }
+
+                    fakeJump()
+                    thePlayer.tryJump()
+
+                    // TODO: Improve Timer Balancing
+                    mc.timer.timerSpeed = 5f
+                    WaitTickUtils.schedule(1) {
+                        mc.timer.timerSpeed = 0.2f
+                    }
+                    WaitTickUtils.schedule(2) {
+                        mc.timer.timerSpeed = 4f
+                    }
+                    WaitTickUtils.schedule(3) {
+                        strafe(0.27F)
+                        mc.timer.timerSpeed = 1f
+                    }
+                }
+
             "LAAC" ->
-                if (thePlayer.isCollidedHorizontally && !thePlayer.isOnLadder && !thePlayer.isInWater && !thePlayer.isInLava && !thePlayer.isInWeb) {
+                if (thePlayer.isCollidedHorizontally) {
                     if (thePlayer.onGround && timer.hasTimePassed(delay)) {
                         isStep = true
 
@@ -91,8 +129,9 @@ object Step : Module("Step", Category.MOVEMENT, gameDetecting = false, hideModul
 
                     thePlayer.onGround = true
                 } else isStep = false
+
             "AAC3.3.4" ->
-                if (thePlayer.isCollidedHorizontally && isMoving) {
+                if (thePlayer.isCollidedHorizontally && thePlayer.isMoving) {
                     if (thePlayer.onGround && couldStep()) {
                         thePlayer.motionX *= 1.26
                         thePlayer.motionZ *= 1.26
@@ -110,12 +149,11 @@ object Step : Module("Step", Category.MOVEMENT, gameDetecting = false, hideModul
         }
     }
 
-    @EventTarget
-    fun onMove(event: MoveEvent) {
-        val thePlayer = mc.thePlayer ?: return
+    val onMove = handler<MoveEvent> { event ->
+        val thePlayer = mc.thePlayer ?: return@handler
 
         if (mode != "MotionNCP" || !thePlayer.isCollidedHorizontally || mc.gameSettings.keyBindJump.isKeyDown)
-            return
+            return@handler
 
         // Motion steps
         when {
@@ -143,31 +181,38 @@ object Step : Module("Step", Category.MOVEMENT, gameDetecting = false, hideModul
         }
     }
 
-    @EventTarget
-    fun onStep(event: StepEvent) {
-        val thePlayer = mc.thePlayer ?: return
+    val onStep = handler<StepEvent> { event ->
+        val thePlayer = mc.thePlayer ?: return@handler
 
         // Phase should disable step
         if (Phase.handleEvents()) {
             event.stepHeight = 0F
-            return
+            return@handler
         }
 
         // Some fly modes should disable step
-        if (Fly.handleEvents() && Fly.mode in arrayOf("Hypixel", "OtherHypixel", "LatestHypixel", "Rewinside", "Mineplex")
-            && thePlayer.inventory.getCurrentItem() == null) {
+        if (Fly.handleEvents() && Fly.mode in arrayOf(
+                "Hypixel",
+                "OtherHypixel",
+                "LatestHypixel",
+                "Rewinside",
+                "Mineplex"
+            )
+            && thePlayer.inventory.getCurrentItem() == null
+        ) {
             event.stepHeight = 0F
-            return
+            return@handler
         }
 
         val mode = mode
 
         // Set step to default in some cases
         if (!thePlayer.onGround || !timer.hasTimePassed(delay) ||
-                mode in arrayOf("Jump", "MotionNCP", "LAAC", "AAC3.3.4")) {
+            mode in arrayOf("Jump", "MotionNCP", "LAAC", "AAC3.3.4", "BlocksMCTimer")
+        ) {
             thePlayer.stepHeight = 0.6F
             event.stepHeight = 0.6F
-            return
+            return@handler
         }
 
         // Set step height
@@ -184,12 +229,11 @@ object Step : Module("Step", Category.MOVEMENT, gameDetecting = false, hideModul
         }
     }
 
-    @EventTarget(ignoreCondition = true)
-    fun onStepConfirm(event: StepConfirmEvent) {
+    val onStepConfirm = handler<StepConfirmEvent>(always = true) {
         val thePlayer = mc.thePlayer
 
         if (thePlayer == null || !isStep) // Check if step
-            return
+            return@handler
 
         if (thePlayer.entityBoundingBox.minY - stepY > 0.6) { // Check if full block step
 
@@ -204,6 +248,7 @@ object Step : Module("Step", Category.MOVEMENT, gameDetecting = false, hideModul
                     )
                     timer.reset()
                 }
+
                 "Spartan" -> {
                     fakeJump()
 
@@ -223,6 +268,7 @@ object Step : Module("Step", Category.MOVEMENT, gameDetecting = false, hideModul
                     // Reset timer
                     timer.reset()
                 }
+
                 "Rewinside" -> {
                     fakeJump()
 
@@ -245,8 +291,7 @@ object Step : Module("Step", Category.MOVEMENT, gameDetecting = false, hideModul
         stepZ = 0.0
     }
 
-    @EventTarget(ignoreCondition = true)
-    fun onPacket(event: PacketEvent) {
+    val onPacket = handler<PacketEvent>(always = true) { event ->
         val packet = event.packet
 
         if (packet is C03PacketPlayer && isStep && mode == "OldNCP") {
@@ -264,12 +309,25 @@ object Step : Module("Step", Category.MOVEMENT, gameDetecting = false, hideModul
     }
 
     private fun couldStep(): Boolean {
-        val yaw = direction
-        val x = -sin(yaw) * 0.4
-        val z = cos(yaw) * 0.4
+        val player = mc.thePlayer ?: return false
 
-        return mc.theWorld.getCollisionBoxes(mc.thePlayer.entityBoundingBox.offset(x, 1.001335979112147, z))
-                .isEmpty()
+        if (player.isSneaking || mc.gameSettings.keyBindJump.isKeyDown)
+            return false
+
+        val yaw = direction
+        val heightOffset = 1.001335979112147
+
+        for (i in -10..10) {
+            val adjustedYaw = yaw + (i * Math.toRadians(8.0))
+            val x = -sin(adjustedYaw) * 0.2
+            val z = cos(adjustedYaw) * 0.2
+
+            if (mc.theWorld.getCollisionBoxes(mc.thePlayer.entityBoundingBox.offset(x, heightOffset, z)).isNotEmpty()) {
+                return false
+            }
+        }
+
+        return true
     }
 
     override val tag

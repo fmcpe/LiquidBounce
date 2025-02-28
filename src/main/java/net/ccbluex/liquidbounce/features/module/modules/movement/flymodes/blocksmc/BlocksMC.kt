@@ -5,8 +5,9 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.blocksmc
 
-import net.ccbluex.liquidbounce.event.EventTarget
+import net.ccbluex.liquidbounce.event.Listenable
 import net.ccbluex.liquidbounce.event.WorldEvent
+import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.modules.movement.Fly
 import net.ccbluex.liquidbounce.features.module.modules.movement.Fly.boostSpeed
 import net.ccbluex.liquidbounce.features.module.modules.movement.Fly.debugFly
@@ -16,11 +17,12 @@ import net.ccbluex.liquidbounce.features.module.modules.movement.Fly.stopOnLandi
 import net.ccbluex.liquidbounce.features.module.modules.movement.Fly.stopOnNoMove
 import net.ccbluex.liquidbounce.features.module.modules.movement.Fly.timerSlowed
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.FlyMode
-import net.ccbluex.liquidbounce.script.api.global.Chat
-import net.ccbluex.liquidbounce.utils.MovementUtils.isMoving
-import net.ccbluex.liquidbounce.utils.MovementUtils.strafe
-import net.ccbluex.liquidbounce.utils.PacketUtils.sendPackets
+import net.ccbluex.liquidbounce.utils.client.PacketUtils.sendPackets
+import net.ccbluex.liquidbounce.utils.client.chat
+import net.ccbluex.liquidbounce.utils.extensions.airTicks
+import net.ccbluex.liquidbounce.utils.extensions.isMoving
 import net.ccbluex.liquidbounce.utils.extensions.tryJump
+import net.ccbluex.liquidbounce.utils.movement.MovementUtils.strafe
 import net.minecraft.client.entity.EntityPlayerSP
 import net.minecraft.network.play.client.C03PacketPlayer.C04PacketPlayerPosition
 import net.minecraft.world.World
@@ -41,12 +43,11 @@ import net.minecraft.world.World
  *
  * @author EclipsesDev
  */
-object BlocksMC : FlyMode("BlocksMC") {
+object BlocksMC : FlyMode("BlocksMC"), Listenable {
 
     private var isFlying = false
     private var isNotUnder = false
     private var isTeleported = false
-    private var airborneTicks = 0
     private var jumped = false
 
     override fun onUpdate() {
@@ -56,18 +57,16 @@ object BlocksMC : FlyMode("BlocksMC") {
         if (isFlying) {
             if (player.onGround && stopOnLanding) {
                 if (debugFly)
-                    Chat.print("Ground Detected.. Stopping Fly")
+                    chat("Ground Detected.. Stopping Fly")
                 Fly.state = false
             }
 
-            if (!isMoving && stopOnNoMove) {
+            if (!player.isMoving && stopOnNoMove) {
                 if (debugFly)
-                    Chat.print("No Movement Detected.. Stopping Fly. (Could be flagged)")
+                    chat("No Movement Detected.. Stopping Fly. (Could be flagged)")
                 Fly.state = false
             }
         }
-
-        updateOffGroundTicks(player)
 
         if (shouldFly(player, world)) {
             if (isTeleported) {
@@ -79,7 +78,7 @@ object BlocksMC : FlyMode("BlocksMC") {
                 handlePlayerFlying(player)
             } else {
                 if (debugFly)
-                    Chat.print("Waiting to be Teleported.. Please ensure you're below a block.")
+                    chat("Waiting to be Teleported.. Please ensure you're below a block.")
             }
         } else {
             handleTeleport(player)
@@ -95,13 +94,8 @@ object BlocksMC : FlyMode("BlocksMC") {
         jumped = false
     }
 
-    @EventTarget
-    fun onWorld(event: WorldEvent) {
+    val onWorld = handler<WorldEvent> {
         Fly.state = false
-    }
-
-    private fun updateOffGroundTicks(player: EntityPlayerSP) {
-        airborneTicks = if (player.onGround) 0 else airborneTicks + 1
     }
 
     private fun handleTimerSlow(player: EntityPlayerSP) {
@@ -117,11 +111,12 @@ object BlocksMC : FlyMode("BlocksMC") {
     }
 
     private fun shouldFly(player: EntityPlayerSP, world: World): Boolean {
-        return world.getCollidingBoundingBoxes(player, player.entityBoundingBox.offset(0.0, 1.0, 0.0)).isEmpty() || isFlying
+        return world.getCollidingBoundingBoxes(player, player.entityBoundingBox.offset(0.0, 1.0, 0.0))
+            .isEmpty() || isFlying
     }
 
     private fun handlePlayerFlying(player: EntityPlayerSP) {
-        when (airborneTicks) {
+        when (player.airTicks) {
             0 -> {
                 if (isNotUnder && isTeleported) {
                     strafe(boostSpeed + extraBoost)
@@ -130,6 +125,7 @@ object BlocksMC : FlyMode("BlocksMC") {
                     isNotUnder = false
                 }
             }
+
             1 -> {
                 if (isFlying) {
                     strafe(boostSpeed)
@@ -161,7 +157,7 @@ object BlocksMC : FlyMode("BlocksMC") {
 
             isTeleported = true
             if (debugFly)
-                Chat.print("Teleported.. Fly Now!")
+                chat("Teleported.. Fly Now!")
         }
     }
 }

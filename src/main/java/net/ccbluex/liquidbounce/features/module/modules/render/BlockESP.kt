@@ -5,78 +5,70 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.render
 
-import net.ccbluex.liquidbounce.event.EventTarget
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import net.ccbluex.liquidbounce.event.Render3DEvent
-import net.ccbluex.liquidbounce.event.UpdateEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.handler
+import net.ccbluex.liquidbounce.event.loopHandler
 import net.ccbluex.liquidbounce.features.module.Category
-import net.ccbluex.liquidbounce.utils.block.BlockUtils.getBlock
+import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.utils.block.BlockUtils.getBlockName
 import net.ccbluex.liquidbounce.utils.block.BlockUtils.searchBlocks
-import net.ccbluex.liquidbounce.utils.render.ColorUtils.rainbow
+import net.ccbluex.liquidbounce.utils.block.block
+import net.ccbluex.liquidbounce.utils.extensions.component1
+import net.ccbluex.liquidbounce.utils.extensions.component2
+import net.ccbluex.liquidbounce.utils.extensions.component3
+import net.ccbluex.liquidbounce.utils.extensions.eyes
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.draw2D
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawBlockBox
-import net.ccbluex.liquidbounce.utils.timing.MSTimer
-import net.ccbluex.liquidbounce.value.BlockValue
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.IntegerValue
-import net.ccbluex.liquidbounce.value.ListValue
 import net.minecraft.block.Block
-import net.minecraft.init.Blocks
 import net.minecraft.init.Blocks.air
-import net.minecraft.init.Blocks.bed
 import net.minecraft.util.BlockPos
 import java.awt.Color
+import java.util.concurrent.ConcurrentHashMap
 
-object BlockESP : Module("BlockESP", Category.RENDER, hideModule = false) {
-    private val mode by ListValue("Mode", arrayOf("Box", "2D"), "Box")
-    private val block by BlockValue("Block", 168)
-    private val radius by IntegerValue("Radius", 40, 5..120)
-    private val blockLimit by IntegerValue("BlockLimit", 256, 0..2056)
+object BlockESP : Module("BlockESP", Category.RENDER) {
+    private val mode by choices("Mode", arrayOf("Box", "2D"), "Box")
+    private val block by block("Block", 168)
+    private val radius by int("Radius", 40, 5..120)
+    private val blockLimit by int("BlockLimit", 256, 0..2056)
 
-    private val colorRainbow by BoolValue("Rainbow", false)
-        private val colorRed by IntegerValue("R", 255, 0..255) { !colorRainbow }
-        private val colorGreen by IntegerValue("G", 179, 0..255) { !colorRainbow }
-        private val colorBlue by IntegerValue("B", 72, 0..255) { !colorRainbow }
+    private val color by color("Color", Color(255, 179, 72))
 
-    private val searchTimer = MSTimer()
-    private val posList = mutableListOf<BlockPos>()
-    private var thread: Thread? = null
+    private val posList = ConcurrentHashMap.newKeySet<BlockPos>()
 
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
-        if (searchTimer.hasTimePassed(1000) && (thread?.isAlive != true)) {
-            val radius = radius
-            val selectedBlock = Block.getBlockById(block)
-            val blockLimit = blockLimit
-
-            if (selectedBlock == null || selectedBlock == air)
-                return
-
-            thread = Thread({
-                val blocks = searchBlocks(radius, setOf(selectedBlock), blockLimit)
-                searchTimer.reset()
-
-                synchronized(posList) {
-                    posList.clear()
-                    posList += blocks.keys
-                }
-            }, "BlockESP-BlockFinder")
-
-            thread!!.start()
-        }
+    override fun onDisable() {
+        posList.clear()
     }
 
-    @EventTarget
-    fun onRender3D(event: Render3DEvent) {
-        synchronized(posList) {
-            val color = if (colorRainbow) rainbow() else Color(colorRed, colorGreen, colorBlue)
-            for (blockPos in posList) {
-                when (mode.lowercase()) {
-                    "box" -> drawBlockBox(blockPos, color, true)
-                    "2d" -> draw2D(blockPos, color.rgb, Color.BLACK.rgb)
-                }
-            }
+    val onSearch = loopHandler(dispatcher = Dispatchers.Default) {
+        val selectedBlock = Block.getBlockById(block)
+
+        if (selectedBlock == null || selectedBlock == air) {
+            delay(1000)
+            return@loopHandler
+        }
+
+        val (x, y, z) = mc.thePlayer.eyes
+        val radiusSq = radius * radius
+
+        posList.removeIf {
+            it.distanceSqToCenter(x, y, z) >= radiusSq || it.block != selectedBlock
+        }
+
+        val listSpace = blockLimit - posList.size
+
+        if (listSpace > 0) {
+            posList += searchBlocks(radius, setOf(selectedBlock), listSpace).keys
+        }
+
+        delay(1000)
+    }
+
+    val onRender3D = handler<Render3DEvent> {
+        when (mode) {
+            "Box" -> posList.forEach { drawBlockBox(it, color, true) }
+            "2D" -> posList.forEach { draw2D(it, color.rgb, Color.BLACK.rgb) }
         }
     }
 

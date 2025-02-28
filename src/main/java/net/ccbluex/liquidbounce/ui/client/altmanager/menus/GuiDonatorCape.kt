@@ -5,19 +5,21 @@
  */
 package net.ccbluex.liquidbounce.ui.client.altmanager.menus
 
+import kotlinx.coroutines.runBlocking
 import net.ccbluex.liquidbounce.cape.CapeService
 import net.ccbluex.liquidbounce.file.FileManager.valuesConfig
 import net.ccbluex.liquidbounce.ui.client.altmanager.GuiAltManager
 import net.ccbluex.liquidbounce.ui.elements.GuiPasswordField
+import net.ccbluex.liquidbounce.ui.font.AWTFontRenderer.Companion.assumeNonVolatile
 import net.ccbluex.liquidbounce.ui.font.Fonts
-import net.ccbluex.liquidbounce.utils.misc.MiscUtils
+import net.ccbluex.liquidbounce.utils.io.MiscUtils
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawRect
+import net.ccbluex.liquidbounce.utils.ui.AbstractScreen
 import net.minecraft.client.gui.GuiButton
-import net.minecraft.client.gui.GuiScreen
 import net.minecraft.client.gui.GuiTextField
 import org.lwjgl.input.Keyboard
 
-class GuiDonatorCape(private val prevGui: GuiAltManager) : GuiScreen() {
+class GuiDonatorCape(private val prevGui: GuiAltManager) : AbstractScreen() {
 
     // Buttons
     private lateinit var upperButton: GuiButton
@@ -40,23 +42,19 @@ class GuiDonatorCape(private val prevGui: GuiAltManager) : GuiScreen() {
         Keyboard.enableRepeatEvents(true)
 
         // Add buttons to screen
-        val upperButtonText = if (!loggedIntoAccount)
-            "Login"
-        else if (CapeService.clientCapeUser?.enabled == true)
-            "Disable visibility"
-        else
-            "Enable visibility"
-
-        buttonList.run{
-            add(GuiButton(1, width / 2 - 100, height / 2 - 60, upperButtonText).apply { upperButton = this })
-            add(GuiButton(2, width / 2 - 100, height / 2 - 35, if (loggedIntoAccount) "Logout" else "Donate to get Cape").apply { lowerButton = this })
-            add(GuiButton(0, width / 2 - 100, height / 2 + 30, "Back"))
+        val upperButtonText = when {
+            !loggedIntoAccount -> "Login"
+            CapeService.clientCapeUser?.enabled == true -> "Disable visibility"
+            else -> "Enable visibility"
         }
 
-
+        upperButton = +GuiButton(1, width / 2 - 100, height / 2 - 60, upperButtonText)
+        lowerButton =
+            +GuiButton(2, width / 2 - 100, height / 2 - 35, if (loggedIntoAccount) "Logout" else "Donate to get Cape")
+        +GuiButton(0, width / 2 - 100, height / 2 + 30, "Back")
 
         // Add fields to screen
-        transferCodeField = GuiPasswordField(666, Fonts.font40, width / 2 - 100, height / 2 - 90, 200, 20)
+        transferCodeField = GuiPasswordField(666, Fonts.fontSemibold40, width / 2 - 100, height / 2 - 90, 200, 20)
         transferCodeField.isFocused = false
         transferCodeField.maxStringLength = Integer.MAX_VALUE
         transferCodeField.text = CapeService.clientCapeUser?.token ?: ""
@@ -68,39 +66,45 @@ class GuiDonatorCape(private val prevGui: GuiAltManager) : GuiScreen() {
     /**
      * Draw screen
      */
-    override fun drawScreen(mouseX : Int, mouseY : Int, partialTicks : Float) {
-        // Draw background to screen
-        drawBackground(0)
-        drawRect(30f, 30f, width - 30f, height - 30f, Integer.MIN_VALUE)
+    override fun drawScreen(mouseX: Int, mouseY: Int, partialTicks: Float) {
+        assumeNonVolatile {
+            // Draw background to screen
+            drawBackground(0)
+            drawRect(30f, 30f, width - 30f, height - 30f, Integer.MIN_VALUE)
 
-        // Draw title and status
-        Fonts.font40.drawCenteredString("Donator Cape", width / 2f, 45f, 0xffffff)
-        if (loggedIntoAccount) {
-            CapeService.clientCapeUser?.run {
-                Fonts.font40.drawCenteredString("§cCape: §f$capeName", width / 2f, height / 2 - 100f, 0xffffff)
-                Fonts.font40.drawCenteredString("§cVisible to others: §f${if (enabled) "Yes" else "No"}", width / 2f, height / 2 - 90f, 0xffffff)
-                Fonts.font40.drawCenteredString("§cOn account: §f$uuid", width / 2f, height / 2 - 80f, 0xffffff)
+            // Draw title and status
+            Fonts.fontSemibold40.drawCenteredString("Donator Cape", width / 2f, 45f, 0xffffff)
+            if (loggedIntoAccount) {
+                CapeService.clientCapeUser?.run {
+                    Fonts.fontSemibold40.drawCenteredString("§cCape: §f$capeName", width / 2f, height / 2 - 100f, 0xffffff)
+                    Fonts.fontSemibold40.drawCenteredString(
+                        "§cVisible to others: §f${if (enabled) "Yes" else "No"}",
+                        width / 2f,
+                        height / 2 - 90f,
+                        0xffffff
+                    )
+                    Fonts.fontSemibold40.drawCenteredString("§cOn account: §f$uuid", width / 2f, height / 2 - 80f, 0xffffff)
+                }
             }
-        }
-        Fonts.font35.drawCenteredString(status, width / 2f, height / 2f - 5, 0xffffff)
+            Fonts.fontSemibold35.drawCenteredString(status, width / 2f, height / 2f - 5, 0xffffff)
 
-        // Draw fields
-        if (!loggedIntoAccount) {
-            transferCodeField.drawTextBox()
+            // Draw fields
+            if (!loggedIntoAccount) {
+                transferCodeField.drawTextBox()
 
-            if (transferCodeField.text.isEmpty() && !transferCodeField.isFocused) {
-                Fonts.font40.drawCenteredString("§7Transfer Code", width / 2f - 60f, height / 2 - 84f, 0xffffff)
+                if (transferCodeField.text.isEmpty() && !transferCodeField.isFocused) {
+                    Fonts.fontSemibold40.drawCenteredString("§7Transfer Code", width / 2f - 60f, height / 2 - 84f, 0xffffff)
+                }
             }
+
+            upperButton.displayString = when {
+                !loggedIntoAccount -> "Login"
+                CapeService.clientCapeUser?.enabled == true -> "Disable visibility"
+                else -> "Enable visibility"
+            }
+
+            lowerButton.displayString = if (loggedIntoAccount) "Logout" else "Donate to get Cape"
         }
-
-        upperButton.displayString = if (!loggedIntoAccount)
-            "Login"
-        else if (CapeService.clientCapeUser?.enabled == true)
-            "Disable visibility"
-        else
-            "Enable visibility"
-
-        lowerButton.displayString = if (loggedIntoAccount) "Logout" else "Donate to get Cape"
 
         super.drawScreen(mouseX, mouseY, partialTicks)
     }
@@ -139,7 +143,9 @@ class GuiDonatorCape(private val prevGui: GuiAltManager) : GuiScreen() {
                     }
 
                     runCatching {
-                        CapeService.login(transferCodeField.text)
+                        runBlocking {
+                            CapeService.login(transferCodeField.text)
+                        }
                     }.onSuccess {
                         status = "§aSuccessfully logged in"
                     }.onFailure {
@@ -147,6 +153,7 @@ class GuiDonatorCape(private val prevGui: GuiAltManager) : GuiScreen() {
                     }
                 }
             }
+
             2 -> {
                 if (loggedIntoAccount) {
                     CapeService.logout()
@@ -163,7 +170,7 @@ class GuiDonatorCape(private val prevGui: GuiAltManager) : GuiScreen() {
     /**
      * Handle key typed
      */
-    override fun keyTyped(typedChar : Char, keyCode : Int) {
+    override fun keyTyped(typedChar: Char, keyCode: Int) {
         when (keyCode) {
             // Check if user want to escape from screen
             Keyboard.KEY_ESCAPE -> {
@@ -194,7 +201,7 @@ class GuiDonatorCape(private val prevGui: GuiAltManager) : GuiScreen() {
     /**
      * Handle mouse clicked
      */
-    override fun mouseClicked(mouseX : Int, mouseY : Int, mouseButton : Int) {
+    override fun mouseClicked(mouseX: Int, mouseY: Int, mouseButton: Int) {
         // Call mouse clicked to field
         if (!loggedIntoAccount) {
             transferCodeField.mouseClicked(mouseX, mouseY, mouseButton)

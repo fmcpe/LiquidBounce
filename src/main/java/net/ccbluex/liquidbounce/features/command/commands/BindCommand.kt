@@ -31,7 +31,7 @@ object BindCommand : Command("bind") {
 
             // Response to user
             chat("Bound module §a§l${module.getName()}§3 to key §a§l${Keyboard.getKeyName(key)}§3.")
-            addNotification(Notification("Bound ${module.getName()} to ${Keyboard.getKeyName(key)}"))
+            addNotification(Notification("Bind Command", "Bound ${module.getName()} to ${Keyboard.getKeyName(key)}"))
             playEdit()
             return
         }
@@ -45,10 +45,10 @@ object BindCommand : Command("bind") {
         val moduleName = args[0]
 
         return when (args.size) {
-            1 -> moduleManager.modules
-                    .map { it.name }
-                    .filter { it.startsWith(moduleName, true) }
-                    .toList()
+            1 -> moduleManager
+                .map { it.name }
+                .filter { it.startsWith(moduleName, true) }
+
             else -> emptyList()
         }
     }

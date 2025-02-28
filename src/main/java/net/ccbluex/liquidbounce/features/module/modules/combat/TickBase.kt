@@ -9,16 +9,13 @@ import net.ccbluex.liquidbounce.event.*
 import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.modules.player.Blink
-import net.ccbluex.liquidbounce.features.module.modules.render.Breadcrumbs
-import net.ccbluex.liquidbounce.utils.EntityUtils
-import net.ccbluex.liquidbounce.utils.SimulatedPlayer
-import net.ccbluex.liquidbounce.utils.misc.RandomUtils
-import net.ccbluex.liquidbounce.utils.render.ColorUtils.rainbow
+import net.ccbluex.liquidbounce.utils.attack.EntityUtils
+import net.ccbluex.liquidbounce.utils.kotlin.RandomUtils
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.glColor
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils
+import net.ccbluex.liquidbounce.utils.simulation.SimulatedPlayer
+import net.ccbluex.liquidbounce.utils.timing.WaitMsUtils
 import net.ccbluex.liquidbounce.utils.timing.WaitTickUtils
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.FloatValue
-import net.ccbluex.liquidbounce.value.IntegerValue
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.network.play.server.S08PacketPlayerPosLook
 import net.minecraft.util.Vec3
@@ -27,41 +24,42 @@ import java.awt.Color
 
 object TickBase : Module("TickBase", Category.COMBAT) {
 
-    private val onlyOnKillAura by BoolValue("OnlyOnKillAura", true)
+    private val mode by choices("Mode", arrayOf("Past", "Future"), "Past")
+    private val onlyOnKillAura by boolean("OnlyOnKillAura", true)
 
-    private val change by IntegerValue("Changes", 100, 0..100)
+    private val change by int("Changes", 100, 0..100)
 
-    private val balanceMaxValue by IntegerValue("BalanceMaxValue", 100, 1..1000)
-    private val balanceRecoveryIncrement by FloatValue("BalanceRecoveryIncrement", 0.1f, 0.01f..10f)
-    private val maxTicksAtATime by IntegerValue("MaxTicksAtATime", 20, 1..100)
+    private val balanceMaxValue by int("BalanceMaxValue", 100, 1..1000)
+    private val balanceRecoveryIncrement by float("BalanceRecoveryIncrement", 0.1f, 0.01f..10f)
+    private val maxTicksAtATime by int("MaxTicksAtATime", 20, 1..100)
 
-    private val maxRangeToAttack: FloatValue = object : FloatValue("MaxRangeToAttack", 5.0f, 0f..10f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minRangeToAttack.get())
-    }
-    private val minRangeToAttack: FloatValue = object : FloatValue("MinRangeToAttack", 3.0f, 0f..10f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxRangeToAttack.get())
-    }
+    private val rangeToAttack by floatRange("RangeToAttack", 3f..5f, 0f..10f)
 
-    private val forceGround by BoolValue("ForceGround", false)
-    private val pauseAfterTick by IntegerValue("PauseAfterTick", 0, 0..100)
-    private val pauseOnFlag by BoolValue("PauseOnFlag", true)
+    private val forceGround by boolean("ForceGround", false)
+    private val pauseAfterTick by int("PauseAfterTick", 0, 0..100)
+    private val pauseOnFlag by boolean("PauseOnFlag", true)
+
+    private val line by boolean("Line", true).subjective()
+    private val lineColor by color("LineColor", Color.GREEN) { line }.subjective()
 
     private var ticksToSkip = 0
     private var tickBalance = 0f
     private var reachedTheLimit = false
     private val tickBuffer = mutableListOf<TickData>()
-    private var duringTickModification = false
+    var duringTickModification = false
+
+    override val tag
+        get() = mode
 
     override fun onToggle(state: Boolean) {
         duringTickModification = false
     }
 
-    @EventTarget
-    fun onTickPre(event: PlayerTickEvent) {
-        val player = mc.thePlayer ?: return
+    val onPreTick = handler<PlayerTickEvent> { event ->
+        val player = mc.thePlayer ?: return@handler
 
         if (player.ridingEntity != null || Blink.handleEvents()) {
-            return
+            return@handler
         }
 
         if (event.state == EventState.PRE && ticksToSkip-- > 0) {
@@ -69,62 +67,86 @@ object TickBase : Module("TickBase", Category.COMBAT) {
         }
     }
 
-    @EventTarget
-    fun onTickPost(event: PlayerTickEvent) {
-        val player = mc.thePlayer ?: return
+    val onGameTick = handler<GameTickEvent>(priority = 1) {
+        val player = mc.thePlayer ?: return@handler
 
         if (player.ridingEntity != null || Blink.handleEvents()) {
-            return
+            return@handler
         }
 
-        if (event.state == EventState.POST && !duringTickModification && tickBuffer.isNotEmpty()) {
-            val nearbyEnemy = getNearestEntityInRange() ?: return
-            val currentDistance = player.positionVector.squareDistanceTo(nearbyEnemy.positionVector)
+        if (!duringTickModification && tickBuffer.isNotEmpty()) {
+            val nearbyEnemy = getNearestEntityInRange() ?: return@handler
+            val currentDistance = player.positionVector.distanceTo(nearbyEnemy.positionVector)
 
-            val possibleTicks = tickBuffer
-                .mapIndexed { index, tick -> index to tick }
-                .filter { (_, tick) ->
-                    tick.position.squareDistanceTo(nearbyEnemy.positionVector) < currentDistance &&
-                        tick.position.squareDistanceTo(nearbyEnemy.positionVector) in minRangeToAttack.get()..maxRangeToAttack.get()
+            val possibleTicks = tickBuffer.mapIndexedNotNull { index, tick ->
+                val tickDistance = tick.position.distanceTo(nearbyEnemy.positionVector)
+
+                (index to tick).takeIf {
+                    tickDistance < currentDistance && tickDistance in rangeToAttack && !tick.isCollidedHorizontally && (!forceGround || tick.onGround)
                 }
-                .filter { (_, tick) -> !forceGround || tick.onGround }
+            }
 
-            val criticalTick = possibleTicks
-                .filter { (_, tick) -> tick.fallDistance > 0.0f }
-                .minByOrNull { (index, _) -> index }
+            val criticalTick =
+                possibleTicks.filter { (_, tick) -> tick.fallDistance > 0.0f }.minByOrNull { (index, _) -> index }
 
-            val (bestTick, _) = criticalTick ?: possibleTicks.minByOrNull { (index, _) -> index } ?: return
+            val (bestTick, _) = criticalTick ?: possibleTicks.minByOrNull { (index, _) -> index } ?: return@handler
 
-            if (bestTick == 0) return
+            if (bestTick == 0) return@handler
 
-            if (RandomUtils.nextInt(endExclusive = 100) > change || (onlyOnKillAura && (!KillAura.state || KillAura.target == null))) {
-                return
+            if (RandomUtils.nextInt(endExclusive = 100) > change ||
+                onlyOnKillAura && (!state || KillAura.target == null)
+            ) {
+                ticksToSkip = 0
+                return@handler
             }
 
             duringTickModification = true
 
-            ticksToSkip = bestTick + pauseAfterTick
+            val skipTicks = (bestTick + pauseAfterTick).coerceAtMost(maxTicksAtATime + pauseAfterTick)
 
-            WaitTickUtils.scheduleTicks(ticksToSkip) {
-                repeat(bestTick) {
+            val tick = {
+                repeat(skipTicks) {
                     player.onUpdate()
                     tickBalance -= 1
                 }
+            }
 
-                duringTickModification = false
+            if (mode == "Past") {
+                ticksToSkip = skipTicks
+
+                WaitTickUtils.schedule(skipTicks) {
+                    tick()
+
+                    WaitMsUtils.schedule(this) {
+                        duringTickModification = false
+                    }
+                }
+            } else {
+                tick()
+
+                ticksToSkip = skipTicks
+
+                WaitTickUtils.schedule(skipTicks) {
+                    WaitMsUtils.schedule(this) {
+                        duringTickModification = false
+                    }
+                }
             }
         }
     }
 
-    @EventTarget
-    fun onMove(event: MoveEvent) {
-        if (mc.thePlayer?.ridingEntity != null || Blink.handleEvents()) {
-            return
+    val onMove = handler<MoveEvent> {
+        val player = mc.thePlayer ?: return@handler
+
+        if (player.ridingEntity != null || Blink.handleEvents()) {
+            return@handler
         }
 
         tickBuffer.clear()
 
-        val simulatedPlayer = SimulatedPlayer.fromClientPlayer(mc.thePlayer.movementInput)
+        val simulatedPlayer = SimulatedPlayer.fromClientPlayer(RotationUtils.modifiedInput)
+
+        simulatedPlayer.rotationYaw = RotationUtils.currentRotation?.yaw ?: player.rotationYaw
 
         if (tickBalance <= 0) {
             reachedTheLimit = true
@@ -136,9 +158,9 @@ object TickBase : Module("TickBase", Category.COMBAT) {
             tickBalance += balanceRecoveryIncrement
         }
 
-        if (reachedTheLimit) return
+        if (reachedTheLimit) return@handler
 
-        repeat(minOf(tickBalance.toInt(), maxTicksAtATime)) {
+        repeat(minOf(tickBalance.toInt(), maxTicksAtATime * if (mode == "Past") 2 else 1)) {
             simulatedPlayer.tick()
             tickBuffer += TickData(
                 simulatedPlayer.pos,
@@ -146,17 +168,20 @@ object TickBase : Module("TickBase", Category.COMBAT) {
                 simulatedPlayer.motionX,
                 simulatedPlayer.motionY,
                 simulatedPlayer.motionZ,
-                simulatedPlayer.onGround
+                simulatedPlayer.onGround,
+                simulatedPlayer.isCollidedHorizontally
             )
         }
     }
 
-    @EventTarget
-    fun onRender3D(event: Render3DEvent) {
-        val color = if (Breadcrumbs.colorRainbow) rainbow() else Color(Breadcrumbs.colorRed,
-            Breadcrumbs.colorGreen,
-            Breadcrumbs.colorBlue
-        )
+    val onDelayedPacketProcess = handler<DelayedPacketProcessEvent> {
+        if (duringTickModification) {
+            it.cancelEvent()
+        }
+    }
+
+    val onRender3D = handler<Render3DEvent> {
+        if (!line) return@handler
 
         synchronized(tickBuffer) {
             glPushMatrix()
@@ -167,14 +192,15 @@ object TickBase : Module("TickBase", Category.COMBAT) {
             glDisable(GL_DEPTH_TEST)
             mc.entityRenderer.disableLightmap()
             glBegin(GL_LINE_STRIP)
-            glColor(color)
+            glColor(lineColor)
 
             val renderPosX = mc.renderManager.viewerPosX
             val renderPosY = mc.renderManager.viewerPosY
             val renderPosZ = mc.renderManager.viewerPosZ
 
             for (tick in tickBuffer) {
-                glVertex3d(tick.position.xCoord - renderPosX,
+                glVertex3d(
+                    tick.position.xCoord - renderPosX,
                     tick.position.yCoord - renderPosY,
                     tick.position.zCoord - renderPosZ
                 )
@@ -190,8 +216,7 @@ object TickBase : Module("TickBase", Category.COMBAT) {
         }
     }
 
-    @EventTarget
-    fun onPacket(event: PacketEvent) {
+    val onPacket = handler<PacketEvent> { event ->
         if (event.packet is S08PacketPlayerPosLook && pauseOnFlag) {
             tickBalance = 0f
         }
@@ -204,14 +229,14 @@ object TickBase : Module("TickBase", Category.COMBAT) {
         val motionY: Double,
         val motionZ: Double,
         val onGround: Boolean,
+        val isCollidedHorizontally: Boolean,
     )
 
     private fun getNearestEntityInRange(): EntityLivingBase? {
         val player = mc.thePlayer ?: return null
+        val entities = mc.theWorld.loadedEntityList ?: return null
 
-        return mc.theWorld?.loadedEntityList
-            ?.filterIsInstance<EntityLivingBase>()
-            ?.filter { EntityUtils.isSelected(it, true) }
-            ?.minByOrNull { player.getDistanceToEntity(it) }
+        return entities.asSequence().filterIsInstance<EntityLivingBase>()
+            .filter { EntityUtils.isSelected(it, true) }.minByOrNull { player.getDistanceToEntity(it) }
     }
 }

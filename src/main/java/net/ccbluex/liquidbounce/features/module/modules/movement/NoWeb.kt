@@ -5,16 +5,19 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.movement
 
-import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.UpdateEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.Category
-import net.ccbluex.liquidbounce.features.module.modules.movement.nowebmodes.aac.*
-import net.ccbluex.liquidbounce.features.module.modules.movement.nowebmodes.intave.*
-import net.ccbluex.liquidbounce.features.module.modules.movement.nowebmodes.other.*
-import net.ccbluex.liquidbounce.value.ListValue
+import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.features.module.modules.movement.nowebmodes.aac.AAC
+import net.ccbluex.liquidbounce.features.module.modules.movement.nowebmodes.aac.LAAC
+import net.ccbluex.liquidbounce.features.module.modules.movement.nowebmodes.intave.IntaveNew
+import net.ccbluex.liquidbounce.features.module.modules.movement.nowebmodes.intave.IntaveOld
+import net.ccbluex.liquidbounce.features.module.modules.movement.nowebmodes.other.None
+import net.ccbluex.liquidbounce.features.module.modules.movement.nowebmodes.other.OldGrim
+import net.ccbluex.liquidbounce.features.module.modules.movement.nowebmodes.other.Rewi
 
-object NoWeb : Module("NoWeb", Category.MOVEMENT, hideModule = false) {
+object NoWeb : Module("NoWeb", Category.MOVEMENT) {
 
     private val noWebModes = arrayOf(
         // Vanilla
@@ -24,21 +27,21 @@ object NoWeb : Module("NoWeb", Category.MOVEMENT, hideModule = false) {
         AAC, LAAC,
 
         // Intave
-        OldMineBlaze,
-        NewMineBlaze,
-        
+        IntaveOld,
+        IntaveNew,
+
         // Other
-        Rewi
+        Rewi,
+        OldGrim
     )
 
     private val modes = noWebModes.map { it.modeName }.toTypedArray()
 
-    val mode by ListValue(
+    val mode by choices(
         "Mode", modes, "None"
     )
 
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
+    val onUpdate = handler<UpdateEvent> {
         modeModule.onUpdate()
     }
 

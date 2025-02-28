@@ -8,7 +8,7 @@ package net.ccbluex.liquidbounce.features.command.commands
 import net.ccbluex.liquidbounce.features.command.Command
 import net.ccbluex.liquidbounce.file.FileManager.friendsConfig
 import net.ccbluex.liquidbounce.file.FileManager.saveConfig
-import net.ccbluex.liquidbounce.utils.misc.StringUtils
+import net.ccbluex.liquidbounce.utils.kotlin.StringUtils
 
 object FriendCommand : Command("friend", "friends") {
     /**
@@ -38,7 +38,11 @@ object FriendCommand : Command("friend", "friends") {
                     return
                 }
 
-                if (if (args.size > 3) friendsConfig.addFriend(name, StringUtils.toCompleteString(args, 3)) else friendsConfig.addFriend(name)) {
+                if (if (args.size > 3) friendsConfig.addFriend(
+                        name,
+                        StringUtils.toCompleteString(args, 3)
+                    ) else friendsConfig.addFriend(name)
+                ) {
                     saveConfig(friendsConfig)
                     chat("§a§l$name§3 was added to your friend list.")
                     playEdit()
@@ -62,7 +66,7 @@ object FriendCommand : Command("friend", "friends") {
                 } else {
                     chat("This name is not in the list.")
                 }
-                    
+
             }
 
             "clear" -> {
@@ -92,17 +96,17 @@ object FriendCommand : Command("friend", "friends") {
                 when (args[0].lowercase()) {
                     "add" -> {
                         return mc.theWorld.playerEntities
-                                .filter { (it.name?.startsWith(args[1], true) ?: false) }
-                                .map { it.name }
+                            .mapNotNull { it.name?.takeIf { name -> name.startsWith(args[1], true) } }
                     }
+
                     "remove" -> {
                         return friendsConfig.friends
-                                .map { it.playerName }
-                                .filter { it.startsWith(args[1], true) }
+                            .mapNotNull { it.playerName.takeIf { name -> name.startsWith(args[1], true) } }
                     }
                 }
                 return emptyList()
             }
+
             else -> emptyList()
         }
     }

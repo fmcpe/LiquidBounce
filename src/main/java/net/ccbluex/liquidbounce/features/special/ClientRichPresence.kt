@@ -5,30 +5,39 @@
  */
 package net.ccbluex.liquidbounce.features.special
 
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
 import com.jagrosh.discordipc.IPCClient
 import com.jagrosh.discordipc.IPCListener
 import com.jagrosh.discordipc.entities.RichPresence
 import com.jagrosh.discordipc.entities.pipe.PipeStatus
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import net.ccbluex.liquidbounce.LiquidBounce.CLIENT_CLOUD
 import net.ccbluex.liquidbounce.LiquidBounce.CLIENT_NAME
 import net.ccbluex.liquidbounce.LiquidBounce.MINECRAFT_VERSION
 import net.ccbluex.liquidbounce.LiquidBounce.clientCommit
 import net.ccbluex.liquidbounce.LiquidBounce.clientVersionText
 import net.ccbluex.liquidbounce.LiquidBounce.moduleManager
-import net.ccbluex.liquidbounce.utils.ClientUtils.LOGGER
-import net.ccbluex.liquidbounce.utils.MinecraftInstance
-import net.ccbluex.liquidbounce.utils.ServerUtils
-import net.ccbluex.liquidbounce.utils.misc.HttpUtils.get
+import net.ccbluex.liquidbounce.config.Configurable
+import net.ccbluex.liquidbounce.event.ClientShutdownEvent
+import net.ccbluex.liquidbounce.event.Listenable
+import net.ccbluex.liquidbounce.event.handler
+import net.ccbluex.liquidbounce.utils.client.ClientUtils.LOGGER
+import net.ccbluex.liquidbounce.utils.client.MinecraftInstance
+import net.ccbluex.liquidbounce.utils.client.ServerUtils
+import net.ccbluex.liquidbounce.utils.io.HttpClient
+import net.ccbluex.liquidbounce.utils.io.get
+import net.ccbluex.liquidbounce.utils.io.jsonBody
+import net.ccbluex.liquidbounce.utils.kotlin.SharedScopes
 import org.json.JSONObject
 import java.io.IOException
 import java.time.OffsetDateTime
-import kotlin.concurrent.thread
 
-object ClientRichPresence : MinecraftInstance() {
+object ClientRichPresence : Configurable("DiscordRPC"), MinecraftInstance, Listenable {
 
-    var showRichPresenceValue = true
+    var showRPCValue by boolean("ShowRichPresence", true)
+    var showRPCServerIP by boolean("ShowRichPresenceServerIP", true)
+    var showRPCModulesCount by boolean("ShowRichPresenceModulesCount", true)
+    var customRPCText by text("RichPresenceCustomText", "")
 
     // IPC Client
     private var ipcClient: IPCClient? = null
@@ -58,10 +67,10 @@ object ClientRichPresence : MinecraftInstance() {
                      * @param client The now ready IPCClient.
                      */
                     override fun onReady(client: IPCClient?) {
-                        thread {
+                        SharedScopes.IO.launch {
                             while (running) {
                                 update()
-                                Thread.sleep(1000L)
+                                delay(1000L)
                             }
                         }
                     }
@@ -104,9 +113,20 @@ object ClientRichPresence : MinecraftInstance() {
             mc.thePlayer?.let {
                 val serverData = mc.currentServerData
 
-                // Set display info
-                setDetails("Server: ${if (mc.isIntegratedServerRunning || serverData == null) "Singleplayer" else ServerUtils.hideSensitiveInformation(serverData.serverIP)}")
-                setState("Enabled ${moduleManager.modules.count { it.state }} of ${moduleManager.modules.size} modules")
+                // Set server info
+                if (showRPCServerIP) {
+                    setDetails(customRPCText.ifEmpty {
+                        "Server: ${
+                            if (mc.isIntegratedServerRunning || serverData == null) "Singleplayer"
+                            else ServerUtils.hideSensitiveInformation(serverData.serverIP)
+                        }"
+                    })
+                }
+
+                // Set modules count info
+                if (showRPCModulesCount) {
+                    setState("Enabled ${moduleManager.count { it.state }} of ${moduleManager.size} modules")
+                }
             }
         }
 
@@ -130,26 +150,24 @@ object ClientRichPresence : MinecraftInstance() {
         }
     }
 
+    private val onClientShutdown = handler<ClientShutdownEvent> {
+        shutdown()
+    }
+
     /**
      * Load configuration from web
      *
      * @throws IOException If reading failed
      */
     private fun loadConfiguration() {
-        val (response, _) = get("$CLIENT_CLOUD/discord.json")
-
-        // Read from web and convert to json object
-        val json = JsonParser().parse(response)
-
-        if (json !is JsonObject)
-            return
+        val discordConf = HttpClient.get("$CLIENT_CLOUD/discord.json").jsonBody<DiscordConfiguration>() ?: return
 
         // Check has app id
-        if (json.has("appID"))
-            appID = json["appID"].asLong
+        discordConf.appID?.let { appID = it }
 
         // Import all asset names
-        for ((key, value) in json["assets"].asJsonObject.entrySet())
-            assets[key] = value.asString
+        assets += discordConf.assets
     }
 }
+
+private class DiscordConfiguration(val appID: Long?, val assets: Map<String, String>)

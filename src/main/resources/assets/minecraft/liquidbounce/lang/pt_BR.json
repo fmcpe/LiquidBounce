@@ -10,6 +10,10 @@
         "menu.configuration": "Configuração",
         "menu.contributors": "Contribuidores",
 
+        "menu.discordRPC.typeBox": "UNTRANSLATED: Type Here..",
+
+        "menu.altManager.typeCustomPrefix": "UNTRANSLATED: Type Custom Alt Prefix Here..",
+
         "notification.moduleEnabled": "Ativado %s",
         "notification.moduleDisabled": "Desativado %s",
 
@@ -33,7 +37,11 @@
 
         "module.backtrack.description": "Permite que você atinja os jogadores atacando suas posições anteriores em cache.",
 
-        "module.bowAimbot.description": "Mira automaticamente os jogadores ao usar um arco.",
+        "module.bedDefender.description": "UNTRANSLATED: Automatically defends bed with blocks",
+
+        "module.bedPlates.description": "UNTRANSLATED: Allows you to see blocks around beds.",
+
+        "module.projectileAimbot.description": "Mira automaticamente os jogadores quando utiliza um projétil.",
 
         "module.criticals.description": "Permite que você dê danos criticos.",
 
@@ -63,9 +71,7 @@
 
         "module.clip.description": "Permite atravessar blocos.",
 
-        "module.airJump.description": "Permite pular no ar.",
-
-        "module.airLadder.description": "Permite subir escadas / videiras sem tocá-las.",
+        "module.antiBounce.description": "UNTRANSLATED: Prevents you from bouncing on blocks.",
 
         "module.animations.description": "Personaliza sua animação de bloqueio.",
 
@@ -75,9 +81,13 @@
 
         "module.antiBot.description": "Impede que o KillAura ataque bots de AntiCheat.",
 
+        "module.antiExploit.description": "UNTRANSLATED: Prevents server from crashing you.",
+
         "module.antiCactus.description": "Impede que cactos o danifiquem.",
 
         "module.antiFireball.description": "Automáticamente tira as bolas de fogo longe de você.",
+
+        "module.antiVoid.description": "Automaticamente impulsiona você para cima após cair uma certa distância.",
 
         "module.atAllProvider.description": "Menciona automaticamente todos no servidor ao usar '@a' em sua mensagem.",
 
@@ -112,8 +122,6 @@
         "module.breadcrumbs.description": "Deixa um rastro atrás de você.",
 
         "module.bufferSpeed.description": "Permite caminhar mais rápido em lajes e escadas.",
-
-        "module.bugUp.description": "Automaticamente impulsiona você para cima após cair uma certa distância.",
 
         "module.cameraClip.description": "Permite ver através das paredes em vista de terceira pessoa.",
 
@@ -151,11 +159,15 @@
 
         "module.fastUse.description": "Permite que você use itens mais rapidamente.",
 
+        "module.flagCheck.description": "UNTRANSLATED: Detects if you get flagged by an AntiCheat.",
+
         "module.fly.description": "Permite que você voe no modo de sobrevivência.",
 
         "module.forceUnicodeChat.description": "Permite que você envie mensagens unicode no chat.",
 
         "module.freeCam.description": "Permite que você saia do seu corpo.",
+
+        "module.freeLook.description": "UNTRANSLATED: Allows you to see around in third person view.",
 
         "module.freeze.description": "Permite que você fique preso no ar.",
 
@@ -191,9 +203,9 @@
 
         "module.keepContainer.description": "Permite que você abra um contêiner de inventário anteriormente fechado em qualquer lugar. (Pressione a tecla INSERT para abrir)",
 
-        "module.kick.description": "Permite que você se expulse de um servidor.",
+        "module.keepTabList.description": "UNTRANSLATED: Keeps TAB List opened",
 
-        "module.ladderJump.description": "Impulsiona você quando toca uma escada.",
+        "module.kick.description": "Permite que você se expulse de um servidor.",
 
         "module.liquidChat.description": "Permite que você intereja com outros usuários do LiquidBounce.",
 
@@ -215,8 +227,6 @@
 
         "module.noBob.description": "Desativa o efeito de balanço de visão.",
 
-        "module.noBooks.description": "Bloqueia o servidor de abrir livros (anúncios forçados)",
-
         "module.noClip.description": "Permite que você se mova livremente através de paredes (um bloco de areia deve cair em sua cabeça).",
 
         "module.noFOV.description": "Desativa as mudanças de FOV causadas pelo efeito de velocidade, etc.",
@@ -233,8 +243,6 @@
 
         "module.noRotateSet.description": "Impede que o servidor gire sua cabeça.",
 
-        "module.noScoreboard.description": "Desativa o ScoreBoard.",
-
         "module.noSlotSet.description": "Impede que o servidor altere seu slot.",
 
         "module.noSlow.description": "Cancela os efeitos de lentidão causados Por Areia da Alma e uso de itens.",
@@ -246,6 +254,8 @@
         "module.noWeb.description": "Impede que você seja desacelerado em teias.",
 
         "module.nuker.description": "Destroi todos os blocos ao seu redor.",
+
+        "module.packetDebugger.description": "UNTRANSLATED: Allows you to debug server/client packets that being sent/receive",
 
         "module.parkour.description": "Pula automaticamente ao chegar na borda de um bloco.",
 
@@ -289,6 +299,8 @@
 
         "module.slimeJump.description": "Permite saltar mais alto em blocos de slime.",
 
+        "module.silentHotbar.description": "UNTRANSLATED: Controls in which scenarios the silently selected item should be rendered.",
+
         "module.sneak.description": "Automaticamente agacha o tempo todo.",
 
         "module.spammer.description": "Spamma o chat com uma mensagem dada.",
@@ -321,14 +333,14 @@
 
         "module.wallClimb.description": "Permite escalar paredes como uma aranha.",
 
-        "module.waterSpeed.description": "Permite nadar mais rápido.",
-
         "module.xRay.description": "Permite ver minérios através de paredes.",
 
         "module.zoot.description": "Remove todos os efeitos ruins de poções/fogo.",
 
         "module.keepSprint.description": "UNTRANSLATED: Keeps you sprinting after attacking.",
 
-        "module.disabler.description": "UNTRANSLATED: Disables either a server or a specific anticheat detection."
+        "module.disabler.description": "UNTRANSLATED: Disables either a server or a specific anticheat detection.",
+
+        "module.tickBase.description": "UNTRANSLATED: Buffers ticks to get early hits of an enemy."
     }
 }

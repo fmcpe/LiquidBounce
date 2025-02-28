@@ -8,15 +8,21 @@ package net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.other
 import net.ccbluex.liquidbounce.event.EventState
 import net.ccbluex.liquidbounce.event.MotionEvent
 import net.ccbluex.liquidbounce.features.module.modules.movement.Fly
+import net.ccbluex.liquidbounce.features.module.modules.movement.Fly.autoFireball
+import net.ccbluex.liquidbounce.features.module.modules.movement.Fly.options
 import net.ccbluex.liquidbounce.features.module.modules.movement.flymodes.FlyMode
-import net.ccbluex.liquidbounce.utils.MovementUtils.isMoving
-import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
-import net.ccbluex.liquidbounce.utils.Rotation
-import net.ccbluex.liquidbounce.utils.RotationUtils
-import net.ccbluex.liquidbounce.utils.extensions.*
+import net.ccbluex.liquidbounce.utils.block.center
+import net.ccbluex.liquidbounce.utils.client.PacketUtils.sendPacket
+import net.ccbluex.liquidbounce.utils.extensions.isMoving
+import net.ccbluex.liquidbounce.utils.extensions.isNearEdge
+import net.ccbluex.liquidbounce.utils.extensions.sendUseItem
+import net.ccbluex.liquidbounce.utils.extensions.tryJump
 import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils
-import net.ccbluex.liquidbounce.utils.inventory.InventoryUtils.serverSlot
-import net.ccbluex.liquidbounce.utils.timing.TickedActions
+import net.ccbluex.liquidbounce.utils.inventory.SilentHotbar
+import net.ccbluex.liquidbounce.utils.inventory.hotBarSlot
+import net.ccbluex.liquidbounce.utils.rotation.Rotation
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils
+import net.ccbluex.liquidbounce.utils.timing.TickedActions.nextTick
 import net.ccbluex.liquidbounce.utils.timing.WaitTickUtils
 import net.minecraft.init.Items
 import net.minecraft.network.play.client.C0APacketAnimation
@@ -29,37 +35,33 @@ object Fireball : FlyMode("Fireball") {
 
         val fireballSlot = InventoryUtils.findItem(36, 44, Items.fire_charge) ?: return
 
-        when (Fly.autoFireball.lowercase()) {
-            "pick" -> {
-                player.inventory.currentItem = fireballSlot - 36
-                mc.playerController.updateController()
-            }
-
-            "spoof", "switch" -> serverSlot = fireballSlot - 36
+        if (autoFireball != "Off") {
+            SilentHotbar.selectSlotSilently(
+                this,
+                fireballSlot,
+                immediate = true,
+                render = autoFireball == "Pick",
+                resetManually = true
+            )
         }
 
         if (event.eventState != EventState.POST)
             return
 
-        val customRotation = Rotation(if (Fly.invertYaw) RotationUtils.invertYaw(player.rotationYaw) else player.rotationYaw, Fly.rotationPitch)
+        val customRotation = Rotation(
+            if (Fly.invertYaw) RotationUtils.invertYaw(player.rotationYaw) else player.rotationYaw,
+            Fly.rotationPitch
+        )
 
-        if (player.onGround && !mc.theWorld.isAirBlock(BlockPos(player.posX, player.posY - 1, player.posZ))) Fly.firePosition = BlockPos(player.posX, player.posY - 1, player.posZ)
+        if (player.onGround && !mc.theWorld.isAirBlock(BlockPos(player.posX, player.posY - 1, player.posZ))) {
+            Fly.firePosition = BlockPos(player.posX, player.posY - 1, player.posZ)
+        }
 
-        val smartRotation = Fly.firePosition?.getVec()?.let { RotationUtils.toRotation(it, false, player) }
+        val smartRotation = Fly.firePosition?.center?.let { RotationUtils.toRotation(it, false, player) }
         val rotation = if (Fly.pitchMode == "Custom") customRotation else smartRotation
 
-        if (Fly.rotations) {
-            if (rotation != null) {
-                RotationUtils.setTargetRotation(
-                    rotation,
-                    if (Fly.keepRotation) Fly.keepTicks else 1,
-                    turnSpeed = Fly.minHorizontalSpeed.get()..Fly.maxHorizontalSpeed.get() to Fly.minVerticalSpeed.get()..Fly.maxVerticalSpeed.get(),
-                    angleThresholdForReset = Fly.angleThresholdUntilReset,
-                    smootherMode = Fly.smootherMode,
-                    simulateShortStop = Fly.simulateShortStop,
-                    startOffSlow = Fly.startFirstRotationSlow
-                )
-            }
+        if (options.rotationsActive && rotation != null) {
+            RotationUtils.setTargetRotation(rotation, options, if (options.keepRotation) options.resetTicks else 1)
         }
 
         if (Fly.fireBallThrowMode == "Edge" && !player.isNearEdge(Fly.edgeThreshold))
@@ -74,7 +76,8 @@ object Fireball : FlyMode("Fireball") {
         val player = mc.thePlayer ?: return
 
         val fireballSlot = InventoryUtils.findItem(36, 44, Items.fire_charge) ?: return
-        val fireBall = player.inventoryContainer.getSlot(fireballSlot).stack
+
+        val fireBall = player.hotBarSlot(fireballSlot).stack
 
         if (Fly.fireBallThrowMode == "Edge" && !player.isNearEdge(Fly.edgeThreshold))
             return
@@ -83,8 +86,8 @@ object Fireball : FlyMode("Fireball") {
             return
         }
 
-        if (isMoving) {
-            TickedActions.TickScheduler(Fly) += {
+        if (player.isMoving) {
+            Fly.nextTick {
                 if (Fly.swing) player.swingItem() else sendPacket(C0APacketAnimation())
 
                 // NOTE: You may increase max try to `2` if fireball doesn't work. (Ex: BlocksMC)
@@ -93,16 +96,23 @@ object Fireball : FlyMode("Fireball") {
                 }
             }
 
-            WaitTickUtils.scheduleTicks(2) {
-                if (Fly.autoFireball == "Pick") {
-                    player.inventory.currentItem = fireballSlot - 36
-                    mc.playerController.updateController()
-                } else {
-                    serverSlot = fireballSlot - 36
+            WaitTickUtils.schedule(2) {
+                if (autoFireball != "Off") {
+                    SilentHotbar.selectSlotSilently(
+                        this,
+                        fireballSlot,
+                        immediate = true,
+                        render = autoFireball == "Pick",
+                        resetManually = true
+                    )
                 }
 
                 Fly.wasFired = true
             }
         }
+    }
+
+    override fun onDisable() {
+        SilentHotbar.resetSlot(this)
     }
 }

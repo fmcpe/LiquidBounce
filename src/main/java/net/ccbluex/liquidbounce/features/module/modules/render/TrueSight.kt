@@ -5,11 +5,17 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.render
 
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.loopHandler
 import net.ccbluex.liquidbounce.features.module.Category
-import net.ccbluex.liquidbounce.value.BoolValue
+import net.ccbluex.liquidbounce.features.module.Module
 
 object TrueSight : Module("TrueSight", Category.RENDER) {
-    val barriers by BoolValue("Barriers", true)
-    val entities by BoolValue("Entities", true)
+    val barriers by boolean("Barriers", true)
+    val entities by boolean("Entities", true)
+
+    val onUpdate = loopHandler {
+        if (barriers && mc.gameSettings.particleSetting == 2) {
+            mc.gameSettings.particleSetting = 1
+        }
+    }
 }

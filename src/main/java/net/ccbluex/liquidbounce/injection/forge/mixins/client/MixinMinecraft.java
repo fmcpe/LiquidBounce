@@ -6,20 +6,19 @@
 package net.ccbluex.liquidbounce.injection.forge.mixins.client;
 
 import net.ccbluex.liquidbounce.LiquidBounce;
-import net.ccbluex.liquidbounce.api.ClientUpdate;
 import net.ccbluex.liquidbounce.event.*;
 import net.ccbluex.liquidbounce.features.module.modules.combat.AutoClicker;
+import net.ccbluex.liquidbounce.features.module.modules.combat.TickBase;
 import net.ccbluex.liquidbounce.features.module.modules.exploit.AbortBreaking;
 import net.ccbluex.liquidbounce.features.module.modules.exploit.MultiActions;
 import net.ccbluex.liquidbounce.features.module.modules.world.FastPlace;
-import net.ccbluex.liquidbounce.file.FileManager;
+import net.ccbluex.liquidbounce.file.configs.models.ClientConfiguration;
 import net.ccbluex.liquidbounce.injection.forge.SplashProgressLock;
-import net.ccbluex.liquidbounce.ui.client.GuiClientConfiguration;
 import net.ccbluex.liquidbounce.ui.client.GuiMainMenu;
-import net.ccbluex.liquidbounce.ui.client.GuiUpdate;
-import net.ccbluex.liquidbounce.ui.client.GuiWelcome;
-import net.ccbluex.liquidbounce.utils.CPSCounter;
-import net.ccbluex.liquidbounce.utils.ClientUtils;
+import net.ccbluex.liquidbounce.utils.attack.CPSCounter;
+import net.ccbluex.liquidbounce.utils.client.ClientUtils;
+import net.ccbluex.liquidbounce.utils.inventory.SilentHotbar;
+import net.ccbluex.liquidbounce.utils.io.MiscUtils;
 import net.ccbluex.liquidbounce.utils.render.IconUtils;
 import net.ccbluex.liquidbounce.utils.render.MiniMapRegister;
 import net.ccbluex.liquidbounce.utils.render.RenderUtils;
@@ -31,9 +30,11 @@ import net.minecraft.client.gui.GuiScreen;
 import net.minecraft.client.gui.ScaledResolution;
 import net.minecraft.client.multiplayer.PlayerControllerMP;
 import net.minecraft.client.multiplayer.WorldClient;
-import net.minecraft.client.particle.EffectRenderer;
 import net.minecraft.client.settings.GameSettings;
+import net.minecraft.crash.CrashReport;
+import net.minecraft.entity.player.InventoryPlayer;
 import net.minecraft.item.ItemBlock;
+import net.minecraft.item.ItemStack;
 import net.minecraft.util.BlockPos;
 import net.minecraft.util.MovingObjectPosition;
 import net.minecraft.util.Util;
@@ -43,17 +44,17 @@ import org.lwjgl.Sys;
 import org.lwjgl.input.Keyboard;
 import org.lwjgl.opengl.Display;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Overwrite;
 import org.spongepowered.asm.mixin.Shadow;
-import org.spongepowered.asm.mixin.injection.At;
-import org.spongepowered.asm.mixin.injection.Constant;
-import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.ModifyConstant;
+import org.spongepowered.asm.mixin.Unique;
+import org.spongepowered.asm.mixin.injection.*;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.nio.ByteBuffer;
+import java.util.Queue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
 
-import static net.ccbluex.liquidbounce.utils.MinecraftInstance.mc;
+import static net.ccbluex.liquidbounce.utils.client.MinecraftInstance.mc;
 
 @Mixin(Minecraft.class)
 @SideOnly(Side.CLIENT)
@@ -78,9 +79,6 @@ public abstract class MixinMinecraft {
     public EntityPlayerSP thePlayer;
 
     @Shadow
-    public EffectRenderer effectRenderer;
-
-    @Shadow
     public PlayerControllerMP playerController;
 
     @Shadow
@@ -98,20 +96,27 @@ public abstract class MixinMinecraft {
     @Shadow
     public abstract void displayGuiScreen(GuiScreen guiScreenIn);
 
+    @Unique
+    private Future<?> liquidBounce$preloadFuture;
+
     @Inject(method = "run", at = @At("HEAD"))
     private void init(CallbackInfo callbackInfo) {
         if (displayWidth < 1067) displayWidth = 1067;
 
         if (displayHeight < 622) displayHeight = 622;
+
+        liquidBounce$preloadFuture = LiquidBounce.INSTANCE.preload();
     }
 
     @Inject(method = "runGameLoop", at = @At(value = "INVOKE", target = "Lnet/minecraft/profiler/Profiler;startSection(Ljava/lang/String;)V", ordinal = 1))
     private void hook(CallbackInfo ci) {
-        EventManager.INSTANCE.callEvent(new GameLoopEvent());
+        EventManager.INSTANCE.call(GameLoopEvent.INSTANCE);
     }
 
     @Inject(method = "startGame", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Minecraft;checkGLError(Ljava/lang/String;)V", ordinal = 2, shift = At.Shift.AFTER))
-    private void startGame(CallbackInfo callbackInfo) {
+    private void startGame(CallbackInfo callbackInfo) throws ExecutionException, InterruptedException {
+        liquidBounce$preloadFuture.get();
+
         LiquidBounce.INSTANCE.startClient();
     }
 
@@ -130,18 +135,9 @@ public abstract class MixinMinecraft {
         }
     }
 
-    @Inject(method = "startGame", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Minecraft;displayGuiScreen(Lnet/minecraft/client/gui/GuiScreen;)V", shift = At.Shift.AFTER))
-    private void afterMainScreen(CallbackInfo callbackInfo) {
-        if (FileManager.INSTANCE.getFirstStart()) {
-            displayGuiScreen(new GuiWelcome());
-        } else if (ClientUpdate.INSTANCE.hasUpdate()) {
-            displayGuiScreen(new GuiUpdate());
-        }
-    }
-
     @Inject(method = "createDisplay", at = @At(value = "INVOKE", target = "Lorg/lwjgl/opengl/Display;setTitle(Ljava/lang/String;)V", shift = At.Shift.AFTER))
     private void createDisplay(CallbackInfo callbackInfo) {
-        if (GuiClientConfiguration.Companion.getEnabledClientTitle()) {
+        if (ClientConfiguration.INSTANCE.getClientTitle()) {
             Display.setTitle(LiquidBounce.INSTANCE.getClientTitle());
         }
     }
@@ -156,9 +152,10 @@ public abstract class MixinMinecraft {
             skipRenderWorld = false;
         }
 
-        EventManager.INSTANCE.callEvent(new ScreenEvent(currentScreen));
+        EventManager.INSTANCE.call(new ScreenEvent(currentScreen));
     }
 
+    @Unique
     private long lastFrame = getTime();
 
     @Inject(method = "runGameLoop", at = @At("HEAD"))
@@ -170,6 +167,7 @@ public abstract class MixinMinecraft {
         RenderUtils.INSTANCE.setDeltaTime(deltaTime);
     }
 
+    @Unique
     public long getTime() {
         return (Sys.getTime() * 1000) / Sys.getTimerResolution();
     }
@@ -177,30 +175,37 @@ public abstract class MixinMinecraft {
     @Inject(method = "runTick", at = @At("HEAD"))
     private void injectGameRuntimeTicks(CallbackInfo ci) {
         ClientUtils.INSTANCE.setRunTimeTicks(ClientUtils.INSTANCE.getRunTimeTicks() + 1);
+        SilentHotbar.INSTANCE.updateSilentSlot();
+    }
+
+    @Inject(method = "runTick", at = @At("TAIL"))
+    private void injectEndTickEvent(CallbackInfo ci) {
+        EventManager.INSTANCE.call(TickEndEvent.INSTANCE);
     }
 
     @Inject(method = "runTick", at = @At(value = "FIELD", target = "Lnet/minecraft/client/Minecraft;joinPlayerCounter:I", ordinal = 0))
     private void onTick(final CallbackInfo callbackInfo) {
-        EventManager.INSTANCE.callEvent(new GameTickEvent());
+        EventManager.INSTANCE.call(GameTickEvent.INSTANCE);
     }
 
     @Inject(method = "runTick", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Minecraft;dispatchKeypresses()V", shift = At.Shift.AFTER))
     private void onKey(CallbackInfo callbackInfo) {
         if (Keyboard.getEventKeyState() && currentScreen == null)
-            EventManager.INSTANCE.callEvent(new KeyEvent(Keyboard.getEventKey() == 0 ? Keyboard.getEventCharacter() + 256 : Keyboard.getEventKey()));
+            EventManager.INSTANCE.call(new KeyEvent(Keyboard.getEventKey() == 0 ? Keyboard.getEventCharacter() + 256 : Keyboard.getEventKey()));
     }
 
     @Inject(method = "sendClickBlockToController", at = @At(value = "INVOKE", target = "Lnet/minecraft/util/MovingObjectPosition;getBlockPos()Lnet/minecraft/util/BlockPos;"))
     private void onClickBlock(CallbackInfo callbackInfo) {
-        if (leftClickCounter == 0 && theWorld.getBlockState(objectMouseOver.getBlockPos()).getBlock().getMaterial() != Material.air) {
-            EventManager.INSTANCE.callEvent(new ClickBlockEvent(objectMouseOver.getBlockPos(), objectMouseOver.sideHit));
+        final BlockPos blockPos = objectMouseOver.getBlockPos();
+        if (leftClickCounter == 0 && theWorld.getBlockState(blockPos).getBlock().getMaterial() != Material.air) {
+            EventManager.INSTANCE.call(new ClickBlockEvent(blockPos, objectMouseOver.sideHit));
         }
     }
 
     @Inject(method = "setWindowIcon", at = @At("HEAD"), cancellable = true)
     private void setWindowIcon(CallbackInfo callbackInfo) {
         if (Util.getOSType() != Util.EnumOS.OSX) {
-            if (GuiClientConfiguration.Companion.getEnabledClientTitle()) {
+            if (ClientConfiguration.INSTANCE.getClientTitle()) {
                 final ByteBuffer[] liquidBounceFavicon = IconUtils.INSTANCE.getFavicon();
                 if (liquidBounceFavicon != null) {
                     Display.setIcon(liquidBounceFavicon);
@@ -213,6 +218,11 @@ public abstract class MixinMinecraft {
     @Inject(method = "shutdown", at = @At("HEAD"))
     private void shutdown(CallbackInfo callbackInfo) {
         LiquidBounce.INSTANCE.stopClient();
+    }
+
+    @Inject(method = "displayCrashReport", at = @At(value = "INVOKE", target = "Lnet/minecraftforge/fml/common/FMLCommonHandler;instance()Lnet/minecraftforge/fml/common/FMLCommonHandler;"))
+    private void injectDisplayCrashReport(CrashReport crashReport, CallbackInfo callbackInfo) {
+        MiscUtils.showErrorPopup(crashReport.getCrashCause(), "Game crashed! ", MiscUtils.generateCrashInfo());
     }
 
     @Inject(method = "clickMouse", at = @At("HEAD"))
@@ -260,32 +270,39 @@ public abstract class MixinMinecraft {
             MiniMapRegister.INSTANCE.unloadAllChunks();
         }
 
-        EventManager.INSTANCE.callEvent(new WorldEvent(p_loadWorld_1_));
+        EventManager.INSTANCE.call(new WorldEvent(p_loadWorld_1_));
     }
 
-    /**
-     * @author CCBlueX
-     */
-    @Overwrite
-    public void sendClickBlockToController(boolean leftClick) {
-        if (!leftClick) leftClickCounter = 0;
 
-        if (leftClickCounter <= 0 && (!thePlayer.isUsingItem() || MultiActions.INSTANCE.handleEvents())) {
-            if (leftClick && objectMouseOver != null && objectMouseOver.typeOfHit == MovingObjectPosition.MovingObjectType.BLOCK) {
-                BlockPos blockPos = objectMouseOver.getBlockPos();
+    @Redirect(method = "sendClickBlockToController", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/entity/EntityPlayerSP;isUsingItem()Z"))
+    private boolean injectMultiActions(EntityPlayerSP instance) {
+        ItemStack itemStack = instance.itemInUse;
 
-                if (leftClickCounter == 0)
-                    EventManager.INSTANCE.callEvent(new ClickBlockEvent(blockPos, objectMouseOver.sideHit));
+        if (MultiActions.INSTANCE.handleEvents()) itemStack = null;
 
+        return itemStack != null;
+    }
 
-                if (theWorld.getBlockState(blockPos).getBlock().getMaterial() != Material.air && playerController.onPlayerDamageBlock(blockPos, objectMouseOver.sideHit)) {
-                    effectRenderer.addBlockHitEffects(blockPos, objectMouseOver.sideHit);
-                    thePlayer.swingItem();
-                }
-            } else if (!AbortBreaking.INSTANCE.handleEvents()) {
-                playerController.resetBlockRemoving();
-            }
+    @Redirect(method = "sendClickBlockToController", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/multiplayer/PlayerControllerMP;resetBlockRemoving()V"))
+    private void injectAbortBreaking(PlayerControllerMP instance) {
+        if (!AbortBreaking.INSTANCE.handleEvents()) {
+            instance.resetBlockRemoving();
         }
+    }
+
+    @Redirect(method = "runGameLoop", at = @At(value = "INVOKE", target = "Ljava/util/Queue;isEmpty()Z"))
+    private boolean injectTickBase(Queue instance) {
+        return TickBase.INSTANCE.getDuringTickModification() || instance.isEmpty();
+    }
+
+    @Redirect(method = {"middleClickMouse", "rightClickMouse"}, at = @At(value = "FIELD", target = "Lnet/minecraft/entity/player/InventoryPlayer;currentItem:I"))
+    private int injectSilentHotbar(InventoryPlayer instance) {
+        return SilentHotbar.INSTANCE.getCurrentSlot();
+    }
+
+    @Inject(method = "runTick", at = @At(value = "FIELD", target = "Lnet/minecraft/client/entity/EntityPlayerSP;inventory:Lnet/minecraft/entity/player/InventoryPlayer;"))
+    private void injectSilentHotbarManualPressDetection(CallbackInfo ci) {
+        SilentHotbar.INSTANCE.setPressedAtSlot(true);
     }
 
     /**

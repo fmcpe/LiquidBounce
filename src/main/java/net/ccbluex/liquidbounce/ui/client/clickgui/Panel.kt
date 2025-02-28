@@ -13,7 +13,7 @@ import net.ccbluex.liquidbounce.features.module.modules.render.ClickGUI.scale
 import net.ccbluex.liquidbounce.ui.client.clickgui.ClickGui.clamp
 import net.ccbluex.liquidbounce.ui.client.clickgui.elements.Element
 import net.ccbluex.liquidbounce.ui.client.clickgui.elements.ModuleElement
-import net.ccbluex.liquidbounce.utils.MinecraftInstance
+import net.ccbluex.liquidbounce.utils.client.MinecraftInstance
 import net.minecraft.client.gui.ScaledResolution
 import net.minecraftforge.fml.relauncher.Side
 import net.minecraftforge.fml.relauncher.SideOnly
@@ -22,8 +22,15 @@ import kotlin.math.min
 import kotlin.math.roundToInt
 
 @SideOnly(Side.CLIENT)
-abstract class Panel(val name: String, var x: Int, var y: Int, val width: Int, val height: Int, var open: Boolean) : MinecraftInstance() {
-    abstract val elements: List<Element>
+class Panel(
+    val name: String,
+    var x: Int,
+    var y: Int,
+    val width: Int,
+    val height: Int,
+    var open: Boolean,
+    val elements: List<Element>
+) : MinecraftInstance {
 
     var x2 = 0
     var y2 = 0
@@ -155,14 +162,14 @@ abstract class Panel(val name: String, var x: Int, var y: Int, val width: Int, v
         return drawScreenAndClick(mouseX, mouseY, mouseButton)
     }
 
-    fun mouseReleased(mouseX: Int, mouseY: Int, state: Int): Boolean {
+    fun mouseReleased(mouseX: Int, mouseY: Int, button: Int): Boolean {
         if (!isVisible) return false
 
         drag = false
 
         if (!open) return false
 
-        return elements.any { it.y <= y + fade && it.mouseReleased(mouseX, mouseY, state) }
+        return elements.any { it.y <= y + fade && it.mouseReleased(mouseX, mouseY, button) }
     }
 
     fun handleScroll(mouseX: Int, mouseY: Int, wheel: Int): Boolean {
@@ -199,4 +206,8 @@ abstract class Panel(val name: String, var x: Int, var y: Int, val width: Int, v
     }
 
     fun isHovered(mouseX: Int, mouseY: Int) = mouseX in x..x + width && mouseY in y..y + height
+
+    override fun hashCode(): Int = this.name.hashCode()
+
+    override fun equals(other: Any?): Boolean = other is Panel && other.name == this.name
 }

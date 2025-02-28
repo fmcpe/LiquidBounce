@@ -9,27 +9,27 @@ import net.ccbluex.liquidbounce.event.*
 import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.modules.combat.KillAura
-import net.ccbluex.liquidbounce.features.module.modules.player.AutoTool
 import net.ccbluex.liquidbounce.ui.font.Fonts
-import net.ccbluex.liquidbounce.utils.PacketUtils.sendPacket
-import net.ccbluex.liquidbounce.utils.RotationUtils.currentRotation
-import net.ccbluex.liquidbounce.utils.RotationUtils.faceBlock
-import net.ccbluex.liquidbounce.utils.RotationUtils.performRaytrace
-import net.ccbluex.liquidbounce.utils.RotationUtils.setTargetRotation
-import net.ccbluex.liquidbounce.utils.RotationUtils.toRotation
-import net.ccbluex.liquidbounce.utils.block.BlockUtils.getBlock
+import net.ccbluex.liquidbounce.utils.block.*
 import net.ccbluex.liquidbounce.utils.block.BlockUtils.getBlockName
 import net.ccbluex.liquidbounce.utils.block.BlockUtils.getCenterDistance
-import net.ccbluex.liquidbounce.utils.block.BlockUtils.isFullBlock
-import net.ccbluex.liquidbounce.utils.extensions.*
-import net.ccbluex.liquidbounce.utils.render.RenderUtils.disableGlCap
+import net.ccbluex.liquidbounce.utils.block.BlockUtils.isBlockBBValid
+import net.ccbluex.liquidbounce.utils.client.PacketUtils.sendPacket
+import net.ccbluex.liquidbounce.utils.extensions.eyes
+import net.ccbluex.liquidbounce.utils.extensions.onPlayerRightClick
+import net.ccbluex.liquidbounce.utils.extensions.rotation
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawBlockBox
-import net.ccbluex.liquidbounce.utils.render.RenderUtils.enableGlCap
-import net.ccbluex.liquidbounce.utils.render.RenderUtils.resetCaps
+import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawBlockDamageText
+import net.ccbluex.liquidbounce.utils.rotation.RotationSettings
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils.currentRotation
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils.faceBlock
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils.performRaytrace
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils.setTargetRotation
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils.toRotation
 import net.ccbluex.liquidbounce.utils.timing.MSTimer
-import net.ccbluex.liquidbounce.value.*
+import net.ccbluex.liquidbounce.utils.timing.WaitTickUtils
 import net.minecraft.block.Block
-import net.minecraft.init.Blocks.air
+import net.minecraft.init.Blocks
 import net.minecraft.network.play.client.C07PacketPlayerDigging
 import net.minecraft.network.play.client.C07PacketPlayerDigging.Action.*
 import net.minecraft.network.play.client.C0APacketAnimation
@@ -37,85 +37,52 @@ import net.minecraft.network.play.server.S08PacketPlayerPosLook
 import net.minecraft.util.BlockPos
 import net.minecraft.util.EnumFacing
 import net.minecraft.util.Vec3
-import org.lwjgl.opengl.GL11.*
 import java.awt.Color
 
-object Fucker : Module("Fucker", Category.WORLD, hideModule = false) {
+object Fucker : Module("Fucker", Category.WORLD) {
 
     /**
      * SETTINGS
      */
+    private val hypixel by boolean("Hypixel", false)
 
-    private val hypixel by BoolValue("Hypixel", false)
+    private val block by block("Block", 26)
+    private val throughWalls by choices("ThroughWalls", arrayOf("None", "Raycast", "Around"), "None") { !hypixel }
+    private val range by float("Range", 5F, 1F..7F)
 
-    private val block by BlockValue("Block", 26)
-    private val throughWalls by ListValue("ThroughWalls", arrayOf("None", "Raycast", "Around"), "None") { !hypixel }
-    private val range by FloatValue("Range", 5F, 1F..7F)
+    private val action by choices("Action", arrayOf("Destroy", "Use"), "Destroy")
+    private val surroundings by boolean("Surroundings", true) { !hypixel }
+    private val instant by boolean("Instant", false) { (action == "Destroy" || surroundings) && !hypixel }
 
-    private val action by ListValue("Action", arrayOf("Destroy", "Use"), "Destroy")
-    private val surroundings by BoolValue("Surroundings", true) { !hypixel }
-    private val instant by BoolValue("Instant", false) { (action == "Destroy" || surroundings) && !hypixel }
+    private val switch by int("SwitchDelay", 250, 0..1000)
+    private val swing by boolean("Swing", true)
+    val noHit by boolean("NoHit", false)
 
-    private val switch by IntegerValue("SwitchDelay", 250, 0..1000)
-    private val swing by BoolValue("Swing", true)
-    val noHit by BoolValue("NoHit", false)
+    private val options = RotationSettings(this).withoutKeepRotation()
 
-    private val rotations by BoolValue("Rotations", true)
-    private val strafe by ListValue("Strafe", arrayOf("Off", "Strict", "Silent"), "Off") { rotations }
-    private val smootherMode by ListValue("SmootherMode", arrayOf("Linear", "Relative"), "Relative") { rotations }
+    private val blockProgress by boolean("BlockProgress", true).subjective()
 
-    private val simulateShortStop by BoolValue("SimulateShortStop", false) { rotations }
-    private val startRotatingSlow by BoolValue("StartRotatingSlow", false) { rotations }
+    private val scale by float("Scale", 2F, 1F..6F) { blockProgress }.subjective()
+    private val font by font("Font", Fonts.fontSemibold40) { blockProgress }.subjective()
+    private val fontShadow by boolean("Shadow", true) { blockProgress }.subjective()
 
-    private val slowDownOnDirectionChange by BoolValue("SlowDownOnDirectionChange", false) { rotations }
-    private val useStraightLinePath by BoolValue("UseStraightLinePath", true) { rotations }
+    private val color by color("Color", Color(200, 100, 0)) { blockProgress }.subjective()
 
-    private val maxHorizontalSpeedValue = object : FloatValue("MaxHorizontalSpeed", 180f, 1f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minHorizontalSpeed)
-        override fun isSupported() = rotations
-
-    }
-    private val maxHorizontalSpeed by maxHorizontalSpeedValue
-
-    private val minHorizontalSpeed: Float by object : FloatValue("MinHorizontalSpeed", 180f, 1f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxHorizontalSpeed)
-        override fun isSupported() = !maxHorizontalSpeedValue.isMinimal() && rotations
-    }
-
-    private val maxVerticalSpeedValue = object : FloatValue("MaxVerticalSpeed", 180f, 1f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtLeast(minVerticalSpeed)
-    }
-    private val maxVerticalSpeed by maxVerticalSpeedValue
-
-    private val minVerticalSpeed: Float by object : FloatValue("MinVerticalSpeed", 180f, 1f..180f) {
-        override fun onChange(oldValue: Float, newValue: Float) = newValue.coerceAtMost(maxVerticalSpeed)
-        override fun isSupported() = !maxVerticalSpeedValue.isMinimal() && rotations
-    }
-
-    private val angleThresholdUntilReset by FloatValue("AngleThresholdUntilReset", 5f, 0.1f..180f) { rotations }
-
-    private val blockProgress by BoolValue("BlockProgress", true)
-
-    private val scale by FloatValue("Scale", 2F, 1F..6F) { blockProgress }
-    private val font by FontValue("Font", Fonts.font40) { blockProgress }
-    private val fontShadow by BoolValue("Shadow", true) { blockProgress }
-
-    private val colorRed by IntegerValue("R", 200, 0..255) { blockProgress }
-    private val colorGreen by IntegerValue("G", 100, 0..255) { blockProgress }
-    private val colorBlue by IntegerValue("B", 0, 0..255) { blockProgress }
-
-    private val ignoreOwnBed by BoolValue("IgnoreOwnBed", false)
+    private val ignoreOwnBed by boolean("IgnoreOwnBed", true)
+    private val ownBedDist by int("MaxBedDistance", 16, 1..32) { ignoreOwnBed }
 
     /**
      * VALUES
      */
-
     var pos: BlockPos? = null
+        private set
+    private var obstructingPos: BlockPos? = null
     private var spawnLocation: Vec3? = null
     private var oldPos: BlockPos? = null
     private var blockHitDelay = 0
     private val switchTimer = MSTimer()
     var currentDamage = 0F
+    var isOwnBed = false
 
     // Surroundings
     private var areSurroundings = false
@@ -127,105 +94,112 @@ object Fucker : Module("Fucker", Category.WORLD, hideModule = false) {
 
         currentDamage = 0F
         pos = null
+        obstructingPos = null
         areSurroundings = false
+        isOwnBed = false
     }
 
-    @EventTarget
-    fun onPacket(event: PacketEvent) {
-        if (mc.thePlayer == null || mc.theWorld == null)
-            return
+    val onPacket = handler<PacketEvent> { event ->
+        if (mc.thePlayer == null || mc.theWorld == null) return@handler
 
         val packet = event.packet
-
         if (packet is S08PacketPlayerPosLook) {
-            val pos = BlockPos(packet.x, packet.y, packet.z)
-
-            spawnLocation = Vec3(pos.x.toDouble(), pos.y.toDouble(), pos.z.toDouble())
+            spawnLocation = Vec3(packet.x, packet.y, packet.z)
         }
     }
 
-    @EventTarget
-    fun onRotationUpdate(event: RotationUpdateEvent) {
-        val player = mc.thePlayer ?: return
-        val world = mc.theWorld ?: return
+    val onRotationUpdate = handler<RotationUpdateEvent> {
+        val player = mc.thePlayer ?: return@handler
+        val world = mc.theWorld ?: return@handler
 
-        if (noHit && KillAura.handleEvents() && KillAura.target != null) {
-            return
-        }
+        if (noHit && KillAura.handleEvents() && KillAura.target != null) return@handler
 
         val targetId = block
 
-        if (pos == null || Block.getIdFromBlock(getBlock(pos!!)) != targetId || getCenterDistance(pos!!) > range) {
+        if (pos == null || pos!!.block!!.id != targetId || getCenterDistance(pos!!) > range) {
             pos = find(targetId)
+            obstructingPos = null
         }
 
         // Reset current breaking when there is no target block
         if (pos == null) {
             currentDamage = 0F
             areSurroundings = false
-            return
+            isOwnBed = false
+            obstructingPos = null
+            return@handler
         }
 
-        var currentPos = pos ?: return
-        var spot = faceBlock(currentPos) ?: return
+        var currentPos = pos ?: return@handler
 
         // Check if it is the player's own bed
-        if (ignoreOwnBed && isBedNearSpawn(currentPos)) {
-            return
+        isOwnBed = ignoreOwnBed && isBedNearSpawn(currentPos)
+        if (isOwnBed) {
+            obstructingPos = null
+            return@handler
         }
 
         if (surroundings || hypixel) {
-            val eyes = player.eyes
-
-            val blockPos = if (hypixel) {
-                currentPos.up()
-            } else {
-                world.rayTraceBlocks(eyes, spot.vec, false, false, true)?.blockPos
-            }
-
-            if (blockPos != null && blockPos.getBlock() != air) {
-                if (currentPos.x != blockPos.x || currentPos.y != blockPos.y || currentPos.z != blockPos.z) {
-                    areSurroundings = true
+            if (hypixel && obstructingPos == null) {
+                val abovePos = currentPos.up()
+                if (abovePos.block != Blocks.air && isHittable(abovePos)) {
+                    obstructingPos = abovePos
+                    currentPos = obstructingPos!!
                 }
-
-                pos = blockPos
-                currentPos = pos ?: return
-                spot = faceBlock(currentPos) ?: return
+            } else if (surroundings && obstructingPos == null) {
+                val eyes = player.eyes
+                val spotToBed = faceBlock(currentPos) ?: return@handler
+                val blockPos = world.rayTraceBlocks(eyes, spotToBed.vec, false, false, true)?.blockPos
+                if (blockPos != null && blockPos.block != Blocks.air && blockPos != currentPos) {
+                    obstructingPos = blockPos
+                    currentPos = obstructingPos!!
+                }
+            } else if (obstructingPos != null) {
+                currentPos = obstructingPos!!
+                if (surroundings) {
+                    val eyes = player.eyes
+                    val spotToObstruction = faceBlock(currentPos) ?: return@handler
+                    val rayTraceResultToObstruction = world.rayTraceBlocks(eyes, spotToObstruction.vec, false, false, true)
+                    // If a new block is blocking it, reset and re-evaluate next cycle.
+                    if (rayTraceResultToObstruction?.blockPos != currentPos &&
+                        rayTraceResultToObstruction?.typeOfHit == net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK
+                    ) {
+                        obstructingPos = null
+                        return@handler
+                    }
+                    val spotToBed = faceBlock(pos!!) ?: return@handler
+                    val rayTraceToBed = world.rayTraceBlocks(eyes, spotToBed.vec, false, false, true)
+                    // Target bed if it's open
+                    if (rayTraceToBed?.blockPos == pos &&
+                        rayTraceToBed.typeOfHit == net.minecraft.util.MovingObjectPosition.MovingObjectType.BLOCK
+                    ) {
+                        obstructingPos = null
+                        currentPos = pos!!
+                    }
+                }
             }
         }
 
-        // Reset switch timer when position changed
+        val spot = faceBlock(currentPos) ?: return@handler
+
+        // Reset switch timer when position changes
         if (oldPos != null && oldPos != currentPos) {
             currentDamage = 0F
             switchTimer.reset()
         }
-
         oldPos = currentPos
 
-        if (!switchTimer.hasTimePassed(switch)) {
-            return
-        }
+        if (!switchTimer.hasTimePassed(switch)) return@handler
 
         // Block hit delay
         if (blockHitDelay > 0) {
             blockHitDelay--
-            return
+            return@handler
         }
 
         // Face block
-        if (rotations) {
-            setTargetRotation(
-                spot.rotation,
-                strafe = strafe != "Off",
-                strict = strafe == "Strict",
-                turnSpeed = minHorizontalSpeed..maxHorizontalSpeed to minVerticalSpeed..maxVerticalSpeed,
-                angleThresholdForReset = angleThresholdUntilReset,
-                smootherMode = smootherMode,
-                simulateShortStop = simulateShortStop,
-                startOffSlow = startRotatingSlow,
-                slowDownOnDirChange = slowDownOnDirectionChange,
-                useStraightLinePath = useStraightLinePath
-            )
+        if (options.rotationsActive) {
+            setTargetRotation(spot.rotation, options = options)
         }
     }
 
@@ -233,87 +207,69 @@ object Fucker : Module("Fucker", Category.WORLD, hideModule = false) {
      * Check if the bed at the given position is near the spawn location
      */
     private fun isBedNearSpawn(currentPos: BlockPos): Boolean {
-        if (getBlock(currentPos) != Block.getBlockById(block) || spawnLocation == null) {
+        if (currentPos.block != Block.getBlockById(block) || spawnLocation == null) {
             return false
         }
-
-        val spawnPos = BlockPos(spawnLocation)
-        return currentPos.distanceSqToCenter(spawnPos.x.toDouble(), spawnPos.y.toDouble(), spawnPos.z.toDouble()) < 256 // 16 * 16
+        return spawnLocation!!.squareDistanceTo(currentPos.center) < ownBedDist * ownBedDist
     }
 
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
-        val player = mc.thePlayer ?: return
-        val world = mc.theWorld ?: return
+    val onUpdate = loopHandler {
+        val player = mc.thePlayer ?: return@loopHandler
+        val world = mc.theWorld ?: return@loopHandler
+        val controller = mc.playerController ?: return@loopHandler
 
-        val controller = mc.playerController ?: return
-
-        val currentPos = pos ?: return
-
-        val targetRotation = if (rotations) {
-            currentRotation ?: player.rotation
-        } else {
-            toRotation(currentPos.getVec(), false).fixedSensitivity()
+        var currentPos = pos ?: return@loopHandler
+        if (obstructingPos != null) {
+            currentPos = obstructingPos!!
         }
 
-        val raytrace = performRaytrace(currentPos, targetRotation, range) ?: return
+        val targetRotation = if (options.rotationsActive) {
+            currentRotation ?: player.rotation
+        } else {
+            toRotation(currentPos.center, false).fixedSensitivity()
+        }
+
+        val raytrace = performRaytrace(currentPos, targetRotation, range) ?: return@loopHandler
 
         when {
             // Destroy block
             action == "Destroy" || areSurroundings -> {
-                // Check if it is the player's own bed
-                if (ignoreOwnBed && isBedNearSpawn(currentPos)) {
-                    return
+                isOwnBed = ignoreOwnBed && isBedNearSpawn(currentPos)
+                if (isOwnBed) {
+                    obstructingPos = null
+                    return@loopHandler
                 }
 
-                // Auto Tool
-                if (AutoTool.handleEvents()) {
-                    AutoTool.switchSlot(currentPos)
-                }
+                EventManager.call(ClickBlockEvent(currentPos, raytrace.sideHit))
 
-                // Break block
                 if (instant && !hypixel) {
                     // CivBreak style block breaking
                     sendPacket(C07PacketPlayerDigging(START_DESTROY_BLOCK, currentPos, raytrace.sideHit))
-
-                    if (swing) {
-                        player.swingItem()
-                    }
-
+                    if (swing) player.swingItem()
                     sendPacket(C07PacketPlayerDigging(STOP_DESTROY_BLOCK, currentPos, raytrace.sideHit))
-                    currentDamage = 0F
-                    return
+                    clearTarget(currentPos)
+                    return@loopHandler
                 }
 
-                // Minecraft block breaking
-                val block = currentPos.getBlock() ?: return
+                val block = currentPos.block ?: return@loopHandler
 
                 if (currentDamage == 0F) {
-                    sendPacket(C07PacketPlayerDigging(START_DESTROY_BLOCK, currentPos, raytrace.sideHit))
-
-                    if (player.capabilities.isCreativeMode || block.getPlayerRelativeBlockHardness(
-                            player,
-                            world,
-                            currentPos
-                        ) >= 1f
+                    // Prevent flagging FastBreak
+                    sendPacket(C07PacketPlayerDigging(STOP_DESTROY_BLOCK, currentPos, raytrace.sideHit))
+                    WaitTickUtils.schedule(1) {
+                        sendPacket(C07PacketPlayerDigging(START_DESTROY_BLOCK, currentPos, raytrace.sideHit))
+                    }
+                    if (player.capabilities.isCreativeMode ||
+                        block.getPlayerRelativeBlockHardness(player, world, currentPos) >= 1f
                     ) {
-                        if (swing) {
-                            player.swingItem()
-                        }
-
+                        if (swing) player.swingItem()
                         controller.onPlayerDestroyBlock(currentPos, raytrace.sideHit)
-
-                        currentDamage = 0F
-                        pos = null
-                        areSurroundings = false
-                        return
+                        clearTarget(currentPos)
+                        return@loopHandler
                     }
                 }
 
-                if (swing) {
-                    player.swingItem()
-                }
-
+                if (swing) player.swingItem()
                 currentDamage += block.getPlayerRelativeBlockHardness(player, world, currentPos)
                 world.sendBlockBreakProgress(player.entityId, currentPos, (currentDamage * 10F).toInt() - 1)
 
@@ -321,136 +277,92 @@ object Fucker : Module("Fucker", Category.WORLD, hideModule = false) {
                     sendPacket(C07PacketPlayerDigging(STOP_DESTROY_BLOCK, currentPos, raytrace.sideHit))
                     controller.onPlayerDestroyBlock(currentPos, raytrace.sideHit)
                     blockHitDelay = 4
-                    currentDamage = 0F
-                    pos = null
-                    areSurroundings = false
+                    clearTarget(currentPos)
                 }
             }
-
             // Use block
             action == "Use" -> {
                 if (player.onPlayerRightClick(currentPos, raytrace.sideHit, raytrace.hitVec, player.heldItem)) {
-                    if (swing) player.swingItem()
-                    else sendPacket(C0APacketAnimation())
-
+                    if (swing) player.swingItem() else sendPacket(C0APacketAnimation())
                     blockHitDelay = 4
-                    currentDamage = 0F
-                    pos = null
-                    areSurroundings = false
+                    clearTarget(currentPos)
                 }
             }
         }
     }
 
-    @EventTarget
-    fun onRender3D(event: Render3DEvent) {
-        val pos = pos ?: return
-        val player = mc.thePlayer ?: return
-        val renderManager = mc.renderManager
+    val onRender3D = handler<Render3DEvent> {
+        val renderPos = obstructingPos ?: pos
+        val posToDraw = renderPos ?: return@handler
 
-        // Check if it is the player's own bed
-        if (ignoreOwnBed && isBedNearSpawn(pos)) {
-            return
-        }
+        isOwnBed = ignoreOwnBed && isBedNearSpawn(posToDraw)
+        if (mc.thePlayer == null || isOwnBed) return@handler
+
+        if (block.blockById == Blocks.air) return@handler
 
         if (blockProgress) {
-            if (getBlockName(block) == "Air") return
-
-            val progress = ((currentDamage * 100).coerceIn(0f, 100f)).toInt()
-            val progressText = "%d%%".format(progress)
-
-            glPushAttrib(GL_ENABLE_BIT)
-            glPushMatrix()
-
-            // Translate to block position
-            glTranslated(
-                pos.x + 0.5 - renderManager.renderPosX,
-                pos.y + 0.5 - renderManager.renderPosY,
-                pos.z + 0.5 - renderManager.renderPosZ
+            posToDraw.drawBlockDamageText(
+                currentDamage,
+                font,
+                fontShadow,
+                color.rgb,
+                scale
             )
-
-            glRotatef(-renderManager.playerViewY, 0F, 1F, 0F)
-            glRotatef(renderManager.playerViewX, 1F, 0F, 0F)
-
-            disableGlCap(GL_LIGHTING, GL_DEPTH_TEST)
-            enableGlCap(GL_BLEND)
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-
-            val fontRenderer = font
-            val color = ((colorRed and 0xFF) shl 16) or ((colorGreen and 0xFF) shl 8) or (colorBlue and 0xFF)
-
-            // Scale
-            val scale = (player.getDistanceSq(pos) / 8F).coerceAtLeast(1.5) / 150F * scale
-            glScaled(-scale, -scale, scale)
-
-            // Draw text
-            val width = fontRenderer.getStringWidth(progressText) * 0.5f
-            fontRenderer.drawString(
-                progressText, -width, if (fontRenderer == Fonts.minecraftFont) 1F else 1.5F, color, fontShadow
-            )
-
-            resetCaps()
-            glPopMatrix()
-            glPopAttrib()
         }
 
-        // Render block box
-        drawBlockBox(pos, Color.RED, true)
+        drawBlockBox(posToDraw, Color.RED, true)
     }
 
     /**
-     * Find new target block by [targetID]
+     * Finds a new target block by [targetID]
      */
     private fun find(targetID: Int): BlockPos? {
-        val thePlayer = mc.thePlayer ?: return null
+        val eyes = mc.thePlayer?.eyes ?: return null
+        var nearestBlockDistanceSq = Double.MAX_VALUE
+        val nearestBlock = BlockPos.MutableBlockPos()
+        val rangeSq = range * range
 
-        val radius = range.toInt() + 1
+        eyes.getAllInBoxMutable(range + 1.0).forEach {
+            val distSq = it.distanceSqToCenter(eyes.xCoord, eyes.yCoord, eyes.zCoord)
+            if (it.block?.id != targetID || distSq > rangeSq || distSq > nearestBlockDistanceSq ||
+                !isHittable(it) && !surroundings && !hypixel
+            ) return@forEach
 
-        var nearestBlockDistance = Double.MAX_VALUE
-        var nearestBlock: BlockPos? = null
-
-        for (x in radius downTo -radius + 1) {
-            for (y in radius downTo -radius + 1) {
-                for (z in radius downTo -radius + 1) {
-                    val blockPos = BlockPos(thePlayer).add(x, y, z)
-                    val block = getBlock(blockPos) ?: continue
-
-                    val distance = getCenterDistance(blockPos)
-
-                    if (Block.getIdFromBlock(block) != targetID
-                        || getCenterDistance(blockPos) > range
-                        || nearestBlockDistance < distance
-                        || !isHittable(blockPos) && !surroundings && !hypixel) {
-                        continue
-                    }
-
-                    nearestBlockDistance = distance
-                    nearestBlock = blockPos
-                }
-            }
+            nearestBlockDistanceSq = distSq
+            nearestBlock.set(it)
         }
 
-        return nearestBlock
+        return nearestBlock.takeIf { nearestBlockDistanceSq != Double.MAX_VALUE }
     }
 
     /**
-     * Check if block is hittable (or allowed to hit through walls)
+     * Checks if the block is hittable (or allowed to be hit through walls)
      */
     private fun isHittable(blockPos: BlockPos): Boolean {
         val thePlayer = mc.thePlayer ?: return false
-
         return when (throughWalls.lowercase()) {
             "raycast" -> {
                 val eyesPos = thePlayer.eyes
-                val movingObjectPosition = mc.theWorld.rayTraceBlocks(eyesPos, blockPos.getVec(), false, true, false)
-
+                val movingObjectPosition = mc.theWorld.rayTraceBlocks(eyesPos, blockPos.center, false, true, false)
                 movingObjectPosition != null && movingObjectPosition.blockPos == blockPos
             }
-
-            "around" -> EnumFacing.values().any { !isFullBlock(blockPos.offset(it)) }
-
+            "around" -> EnumFacing.entries.any { !isBlockBBValid(blockPos.offset(it)) }
             else -> true
         }
+    }
+
+    /**
+     * Clears the current target if it matches [currentPos] and resets related values.
+     */
+    private fun clearTarget(currentPos: BlockPos) {
+        if (currentPos == obstructingPos) {
+            obstructingPos = null
+        }
+        if (currentPos == pos) {
+            pos = null
+        }
+        areSurroundings = false
+        currentDamage = 0F
     }
 
     override val tag

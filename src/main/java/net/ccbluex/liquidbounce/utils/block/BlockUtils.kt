@@ -5,48 +5,21 @@
  */
 package net.ccbluex.liquidbounce.utils.block
 
-import net.ccbluex.liquidbounce.utils.MinecraftInstance
-import net.minecraft.block.*
+import net.ccbluex.liquidbounce.utils.client.MinecraftInstance
+import net.ccbluex.liquidbounce.utils.extensions.immutableCopy
+import net.minecraft.block.Block
+import net.minecraft.block.BlockGlass
+import net.minecraft.block.BlockSoulSand
+import net.minecraft.block.BlockStainedGlass
 import net.minecraft.block.state.IBlockState
-import net.minecraft.entity.item.EntityFallingBlock
+import net.minecraft.init.Blocks
 import net.minecraft.util.AxisAlignedBB
 import net.minecraft.util.BlockPos
+import net.minecraft.util.ResourceLocation
 
 typealias Collidable = (Block?) -> Boolean
 
-object BlockUtils : MinecraftInstance() {
-    /**
-     * Get block from [blockPos]
-     */
-    fun getBlock(blockPos: BlockPos) = getState(blockPos)?.block
-
-    /**
-     * Get material from [blockPos]
-     */
-    fun getMaterial(blockPos: BlockPos) = getState(blockPos)?.block?.material
-
-    /**
-     * Check [blockPos] is replaceable
-     */
-    fun isReplaceable(blockPos: BlockPos) = getMaterial(blockPos)?.isReplaceable ?: false
-
-    /**
-     * Get state from [blockPos]
-     */
-    fun getState(blockPos: BlockPos) = mc.theWorld?.getBlockState(blockPos)
-
-    /**
-     * Check if [blockPos] is clickable
-     */
-    fun canBeClicked(blockPos: BlockPos): Boolean {
-        val state = getState(blockPos) ?: return false
-        val block = state.block ?: return false
-
-        return block.canCollideCheck(state, false) && blockPos in mc.theWorld.worldBorder && !block.material.isReplaceable
-                && !block.hasTileEntity(state) && isFullBlock(blockPos, state, true)
-                && mc.theWorld.loadedEntityList.find { it is EntityFallingBlock && it.position == blockPos } == null
-                && block !is BlockContainer && block !is BlockWorkbench
-    }
+object BlockUtils : MinecraftInstance {
 
     /**
      * Get block name by [id]
@@ -54,12 +27,22 @@ object BlockUtils : MinecraftInstance() {
     fun getBlockName(id: Int): String = Block.getBlockById(id).localizedName
 
     /**
-     * Check if block is full block
+     * Check if block bounding box is full or partial (non-full)
      */
-    fun isFullBlock(blockPos: BlockPos, blockState: IBlockState? = null, supportSlabs: Boolean = false): Boolean {
-        val state = blockState ?: getState(blockPos) ?: return false
+    fun isBlockBBValid(
+        blockPos: BlockPos,
+        blockState: IBlockState? = null,
+        supportSlabs: Boolean = false,
+        supportPartialBlocks: Boolean = false
+    ): Boolean {
+        val state = blockState ?: blockPos.state ?: return false
 
         val box = state.block.getCollisionBoundingBox(mc.theWorld, blockPos, state) ?: return false
+
+        // Support blocks like stairs, slab (1x), dragon-eggs, glass-panes, fences, etc
+        if (supportPartialBlocks && (box.maxY - box.minY < 1.0 || box.maxX - box.minX < 1.0 || box.maxZ - box.minZ < 1.0)) {
+            return true
+        }
 
         // The slab will only return true if it's placed at a level that can be placed like any normal full block
         return box.maxX - box.minX == 1.0 && (box.maxY - box.minY == 1.0 || supportSlabs && box.maxY % 1.0 == 0.0) && box.maxZ - box.minZ == 1.0
@@ -89,24 +72,33 @@ object BlockUtils : MinecraftInstance() {
      * Search a limited amount [maxBlocksLimit] of specific blocks [targetBlocks] around the player in a specific [radius].
      * If [targetBlocks] is null it searches every block
      **/
-    fun searchBlocks(radius: Int, targetBlocks: Set<Block>?, maxBlocksLimit: Int = 256): Map<BlockPos, Block> {
+    fun searchBlocks(
+        radius: Int,
+        targetBlocks: Set<Block>? = null,
+        maxBlocksLimit: Int? = null,
+        predicate: (BlockPos, Block) -> Boolean = { _, _ -> true }
+    ): MutableMap<BlockPos, Block> {
+        val thePlayer = mc.thePlayer ?: return mutableMapOf()
+
         val blocks = mutableMapOf<BlockPos, Block>()
 
-        val thePlayer = mc.thePlayer ?: return blocks
-
+        val mutable = BlockPos.MutableBlockPos(0, 0, 0)
         for (x in radius downTo -radius + 1) {
             for (y in radius downTo -radius + 1) {
                 for (z in radius downTo -radius + 1) {
-                    if (blocks.size >= maxBlocksLimit) {
+                    if (maxBlocksLimit != null && blocks.size >= maxBlocksLimit) {
                         return blocks
                     }
 
-                    val blockPos =
-                        BlockPos(thePlayer.posX.toInt() + x, thePlayer.posY.toInt() + y, thePlayer.posZ.toInt() + z)
-                    val block = getBlock(blockPos) ?: continue
+                    mutable.set(thePlayer.posX.toInt() + x, thePlayer.posY.toInt() + y, thePlayer.posZ.toInt() + z)
+
+                    val block = mutable.block ?: continue
 
                     if (targetBlocks == null || targetBlocks.contains(block)) {
-                        blocks[blockPos] = block
+                        val pos = mutable.immutableCopy()
+                        if (predicate(pos, block)) {
+                            blocks[pos] = block
+                        }
                     }
                 }
             }
@@ -121,9 +113,12 @@ object BlockUtils : MinecraftInstance() {
     fun collideBlock(axisAlignedBB: AxisAlignedBB, collide: Collidable): Boolean {
         val thePlayer = mc.thePlayer
 
+        val y = axisAlignedBB.minY.toInt()
+        val mutable = BlockPos.MutableBlockPos(0, 0, 0)
         for (x in thePlayer.entityBoundingBox.minX.toInt() until thePlayer.entityBoundingBox.maxX.toInt() + 1) {
             for (z in thePlayer.entityBoundingBox.minZ.toInt() until thePlayer.entityBoundingBox.maxZ.toInt() + 1) {
-                val block = getBlock(BlockPos(x.toDouble(), axisAlignedBB.minY, z.toDouble()))
+                val blockPos = mutable.set(x, y, z)
+                val block = blockPos.block
 
                 if (!collide(block))
                     return false
@@ -140,13 +135,15 @@ object BlockUtils : MinecraftInstance() {
         val thePlayer = mc.thePlayer
         val world = mc.theWorld
 
+        val y = axisAlignedBB.minY.toInt()
+        val mutable = BlockPos.MutableBlockPos(0, 0, 0)
         for (x in thePlayer.entityBoundingBox.minX.toInt() until thePlayer.entityBoundingBox.maxX.toInt() + 1) {
             for (z in thePlayer.entityBoundingBox.minZ.toInt() until thePlayer.entityBoundingBox.maxZ.toInt() + 1) {
-                val blockPos = BlockPos(x.toDouble(), axisAlignedBB.minY, z.toDouble())
-                val block = getBlock(blockPos)
+                val blockPos = mutable.set(x, y, z)
+                val block = blockPos.block
 
                 if (collide(block)) {
-                    val boundingBox = getState(blockPos)?.let { block?.getCollisionBoundingBox(world, blockPos, it) }
+                    val boundingBox = blockPos.state?.let { block?.getCollisionBoundingBox(world, blockPos, it) }
                         ?: continue
 
                     if (thePlayer.entityBoundingBox.intersectsWith(boundingBox))
@@ -157,4 +154,35 @@ object BlockUtils : MinecraftInstance() {
         return false
     }
 
+    /**
+     * Bedwars Blocks List
+     */
+    val BEDWARS_BLOCKS = setOf(
+        Blocks.wool,
+        Blocks.stained_hardened_clay,
+        Blocks.stained_glass,
+        Blocks.planks,
+        Blocks.log,
+        Blocks.log2,
+        Blocks.end_stone,
+        Blocks.obsidian,
+        Blocks.water
+    )
+
+    /**
+     * Bedwars Blocks Texture List
+     */
+    fun getBlockTexture(block: Block): ResourceLocation {
+        return when (block) {
+            Blocks.bed -> ResourceLocation("minecraft:textures/items/bed.png")
+            Blocks.obsidian -> ResourceLocation("minecraft:textures/blocks/obsidian.png")
+            Blocks.end_stone -> ResourceLocation("minecraft:textures/blocks/end_stone.png")
+            Blocks.stained_hardened_clay -> ResourceLocation("minecraft:textures/blocks/hardened_clay_stained_white.png")
+            Blocks.stained_glass -> ResourceLocation("minecraft:textures/blocks/glass.png")
+            Blocks.water -> ResourceLocation("minecraft:textures/blocks/water_still.png")
+            Blocks.planks -> ResourceLocation("minecraft:textures/blocks/planks_oak.png")
+            Blocks.wool -> ResourceLocation("minecraft:textures/blocks/wool_colored_white.png")
+            else -> ResourceLocation("minecraft:textures/blocks/stone.png")
+        }
+    }
 }

@@ -6,32 +6,22 @@
 package net.ccbluex.liquidbounce.features.module.modules.player
 
 import net.ccbluex.liquidbounce.event.*
-import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.Category
+import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.modules.render.Breadcrumbs
-import net.ccbluex.liquidbounce.utils.BlinkUtils
-import net.ccbluex.liquidbounce.utils.render.ColorUtils.rainbow
+import net.ccbluex.liquidbounce.utils.client.BlinkUtils
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.glColor
 import net.ccbluex.liquidbounce.utils.timing.MSTimer
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.IntegerValue
-import net.ccbluex.liquidbounce.value.ListValue
-import net.minecraft.network.play.server.S02PacketChat
-import net.minecraft.network.play.server.S40PacketDisconnect
-import net.minecraft.network.status.client.C01PacketPing
-import net.minecraft.network.handshake.client.C00Handshake
-import net.minecraft.network.status.client.C00PacketServerQuery
 import org.lwjgl.opengl.GL11.*
-import java.awt.Color
 
-object Blink : Module("Blink", Category.PLAYER, gameDetecting = false, hideModule = false) {
+object Blink : Module("Blink", Category.PLAYER, gameDetecting = false) {
 
-	private val mode by ListValue("Mode", arrayOf("Sent", "Received", "Both"), "Sent")
+    private val mode by choices("Mode", arrayOf("Sent", "Received", "Both"), "Sent")
 
-    private val pulse by BoolValue("Pulse", false)
-		private val pulseDelay by IntegerValue("PulseDelay", 1000, 500..5000) { pulse }
+    private val pulse by boolean("Pulse", false)
+    private val pulseDelay by int("PulseDelay", 1000, 500..5000) { pulse }
 
-    private val fakePlayerMenu by BoolValue("FakePlayer", true)
+    private val fakePlayerMenu by boolean("FakePlayer", true)
 
     private val pulseTimer = MSTimer()
 
@@ -49,39 +39,30 @@ object Blink : Module("Blink", Category.PLAYER, gameDetecting = false, hideModul
         BlinkUtils.unblink()
     }
 
-    @EventTarget
-    fun onPacket(event: PacketEvent) {
+    val onPacket = handler<PacketEvent> { event ->
         val packet = event.packet
 
         if (mc.thePlayer == null || mc.thePlayer.isDead)
-            return
-
-        if (event.isCancelled)
-            return
-
-        when (packet) {
-            is C00Handshake, is C00PacketServerQuery, is C01PacketPing, is S02PacketChat, is S40PacketDisconnect -> {
-                return
-            }
-        }
+            return@handler
 
         when (mode.lowercase()) {
             "sent" -> {
                 BlinkUtils.blink(packet, event, sent = true, receive = false)
             }
+
             "received" -> {
                 BlinkUtils.blink(packet, event, sent = false, receive = true)
             }
+
             "both" -> {
                 BlinkUtils.blink(packet, event)
             }
         }
     }
 
-    @EventTarget
-    fun onMotion(event: MotionEvent) {
+    val onMotion = handler<MotionEvent> { event ->
         if (event.eventState == EventState.POST) {
-            val thePlayer = mc.thePlayer ?: return
+            val thePlayer = mc.thePlayer ?: return@handler
 
             if (thePlayer.isDead || mc.thePlayer.ticksExisted <= 10) {
                 BlinkUtils.unblink()
@@ -107,11 +88,8 @@ object Blink : Module("Blink", Category.PLAYER, gameDetecting = false, hideModul
         }
     }
 
-    @EventTarget
-    fun onRender3D(event: Render3DEvent) {
-        val color =
-            if (Breadcrumbs.colorRainbow) rainbow()
-            else Color(Breadcrumbs.colorRed, Breadcrumbs.colorGreen, Breadcrumbs.colorBlue)
+    val onRender3D = handler<Render3DEvent> {
+        val color = Breadcrumbs.colors.color()
 
         synchronized(BlinkUtils.positions) {
             glPushMatrix()

@@ -5,21 +5,21 @@
  */
 package net.ccbluex.liquidbounce.lang
 
-import net.ccbluex.liquidbounce.file.FileManager.PRETTY_GSON
-import net.ccbluex.liquidbounce.utils.ClientUtils.LOGGER
-import net.ccbluex.liquidbounce.utils.MinecraftInstance
+import net.ccbluex.liquidbounce.file.configs.models.ClientConfiguration.overrideLanguage
+import net.ccbluex.liquidbounce.utils.client.ClientUtils.LOGGER
+import net.ccbluex.liquidbounce.utils.client.MinecraftInstance
+import net.ccbluex.liquidbounce.utils.io.decodeJson
 
 fun translationMenu(key: String, vararg args: Any) = LanguageManager.getTranslation("menu.$key", *args)
+fun translationButton(key: String, vararg args: Any) = LanguageManager.getTranslation("button.$key", *args)
+fun translationText(key: String, vararg args: Any) = LanguageManager.getTranslation("text.$key", *args)
 fun translation(key: String, vararg args: Any) = LanguageManager.getTranslation(key, *args)
 
-object LanguageManager : MinecraftInstance() {
+object LanguageManager : MinecraftInstance {
 
     // Current language
     private val language: String
         get() = overrideLanguage.ifBlank { mc.gameSettings.language }
-    
-    // The game language can be overridden by the user
-    var overrideLanguage = ""
 
     // Common language
     private const val COMMON_UNDERSTOOD_LANGUAGE = "en_US"
@@ -34,7 +34,7 @@ object LanguageManager : MinecraftInstance() {
         "bg_BG",
         "ru_RU"
     )
-    private val languageMap = mutableMapOf<String, Language>()
+    private val languageMap = hashMapOf<String, Language>()
 
     /**
      * Load all languages which are pre-defined in [knownLanguages] and stored in assets.
@@ -45,9 +45,8 @@ object LanguageManager : MinecraftInstance() {
     fun loadLanguages() {
         for (language in knownLanguages) {
             runCatching {
-                val languageFile = javaClass.getResourceAsStream("/assets/minecraft/liquidbounce/lang/$language.json")
-                val languageJson = PRETTY_GSON.fromJson(languageFile.bufferedReader(), Language::class.java)
-                languageMap[language] = languageJson
+                languageMap[language] = javaClass.getResourceAsStream("/assets/minecraft/liquidbounce/lang/$language.json")!!
+                    .bufferedReader().use { it.decodeJson() }
             }.onSuccess {
                 LOGGER.info("Loaded language $language")
             }.onFailure {
@@ -60,15 +59,15 @@ object LanguageManager : MinecraftInstance() {
      * Get translation from language
      */
     fun getTranslation(key: String, vararg args: Any)
-        = languageMap[language]?.getTranslation(key, *args)
-        ?: languageMap[COMMON_UNDERSTOOD_LANGUAGE]?.getTranslation(key, *args)
+        = languageMap[language]?.getTranslation(key, args = args)
+        ?: languageMap[COMMON_UNDERSTOOD_LANGUAGE]?.getTranslation(key, args = args)
         ?: key
     
 }
 
 class Language(val locale: String, val contributors: List<String>, val translations: Map<String, String>) {
 
-    fun getTranslation(key: String, vararg args: Any) = translations[key]?.format(*args)
+    fun getTranslation(key: String, vararg args: Any) = translations[key]?.format(args = args)
 
     override fun toString() = locale
 

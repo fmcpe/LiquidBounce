@@ -12,13 +12,14 @@ import net.ccbluex.liquidbounce.features.module.modules.exploit.AntiExploit;
 import net.ccbluex.liquidbounce.features.module.modules.misc.NoRotateSet;
 import net.ccbluex.liquidbounce.features.module.modules.player.Blink;
 import net.ccbluex.liquidbounce.features.special.ClientFixes;
-import net.ccbluex.liquidbounce.script.api.global.Chat;
-import net.ccbluex.liquidbounce.utils.ClientUtils;
-import net.ccbluex.liquidbounce.utils.PacketUtils;
-import net.ccbluex.liquidbounce.utils.Rotation;
-import net.ccbluex.liquidbounce.utils.RotationUtils;
+import net.ccbluex.liquidbounce.ui.client.hud.HUD;
+import net.ccbluex.liquidbounce.ui.client.hud.element.elements.Notification;
+import net.ccbluex.liquidbounce.utils.client.ClientUtils;
+import net.ccbluex.liquidbounce.utils.client.PacketUtils;
+import net.ccbluex.liquidbounce.utils.rotation.Rotation;
+import net.ccbluex.liquidbounce.utils.rotation.RotationUtils;
 import net.ccbluex.liquidbounce.utils.extensions.PlayerExtensionKt;
-import net.ccbluex.liquidbounce.utils.misc.RandomUtils;
+import net.ccbluex.liquidbounce.utils.kotlin.RandomUtils;
 import net.minecraft.client.ClientBrandRetriever;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.entity.EntityPlayerSP;
@@ -47,8 +48,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import java.net.URI;
 import java.net.URISyntaxException;
 
-import static net.ccbluex.liquidbounce.utils.MinecraftInstance.mc;
-import static net.minecraft.network.play.client.C19PacketResourcePackStatus.Action.ACCEPTED;
+import static net.ccbluex.liquidbounce.utils.client.ClientUtilsKt.chat;
+import static net.ccbluex.liquidbounce.utils.client.MinecraftInstance.mc;
 import static net.minecraft.network.play.client.C19PacketResourcePackStatus.Action.FAILED_DOWNLOAD;
 
 @Mixin(NetHandlerPlayClient.class)
@@ -64,38 +65,78 @@ public abstract class MixinNetHandlerPlayClient {
     @Shadow
     private WorldClient clientWorldController;
 
-    @Redirect(method = "handleExplosion", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/play/server/S27PacketExplosion;getStrength()F"))
-    private float onExplosionVelocity(S27PacketExplosion packetExplosion) {
-        if (AntiExploit.INSTANCE.getState() && AntiExploit.INSTANCE.getLimitExplosionStrength()) {
-            float strength = packetExplosion.getStrength();
-            float fixedStrength = MathHelper.clamp_float(strength, -1000.0f, 1000.0f);
+    @Inject(method = "handleExplosion", at = @At("HEAD"), cancellable = true)
+    private void cancelExplosionMotion(S27PacketExplosion packetExplosion, CallbackInfo ci) {
+        AntiExploit module = AntiExploit.INSTANCE;
 
-            if (fixedStrength != strength) {
-                Chat.print("Limited too strong explosion");
-                return fixedStrength;
+        double motionX = packetExplosion.field_149159_h;
+        double motionY = packetExplosion.func_149144_d();
+        double motionZ = packetExplosion.func_149147_e();
+
+        if (module.handleEvents() && module.getCancelExplosionMotion()) {
+            double x = MathHelper.clamp_double(motionX, -50.0, 50.0);
+            double y = MathHelper.clamp_double(motionY, -50.0, 50.0);
+            double z = MathHelper.clamp_double(motionZ, -50.0, 50.0);
+
+            if (x != motionX || y != motionY || z != motionZ) {
+                if (module.getWarn().equals("Chat")) {
+                    chat("Cancelled too strong TNT explosion motion");
+                } else if (module.getWarn().equals("Notification")) {
+                    HUD.INSTANCE.addNotification(Notification.Companion.informative(module,"Cancelled too strong TNT explosion motion", 1000L));
+                }
+                ci.cancel();
             }
         }
-        return packetExplosion.getStrength();
     }
 
-    @Redirect(method = "handleExplosion", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/play/server/S27PacketExplosion;func_149149_c()F"))
-    private float onExplosionWorld(S27PacketExplosion packetExplosion) {
-        if (AntiExploit.INSTANCE.getState() && AntiExploit.INSTANCE.getLimitExplosionRange()) {
-            float originalRadius = packetExplosion.func_149149_c();
-            float radius = MathHelper.clamp_float(originalRadius, -1000.0f, 1000.0f);
+    @Inject(method = "handleExplosion", at = @At("HEAD"), cancellable = true)
+    private void cancelExplosionStrength(S27PacketExplosion packetExplosion, CallbackInfo ci) {
+        AntiExploit module = AntiExploit.INSTANCE;
 
-            if (radius != originalRadius) {
-                Chat.print("Limited too big TNT explosion radius");
-                return radius;
+        if (module.handleEvents() && module.getCancelExplosionStrength()) {
+            float originalStrength = packetExplosion.getStrength();
+            float strength = MathHelper.clamp_float(originalStrength, -100f, 100f);
+
+            if (strength != originalStrength) {
+                if (module.getWarn().equals("Chat")) {
+                    chat("Cancelled too strong TNT explosion strength");
+                } else if (module.getWarn().equals("Notification")) {
+                    HUD.INSTANCE.addNotification(Notification.Companion.informative(module, "Cancelled too strong TNT explosion strength", 1000L));
+                }
+                ci.cancel();
             }
         }
-        return packetExplosion.func_149149_c();
+    }
+
+    @Inject(method = "handleExplosion", at = @At("HEAD"), cancellable = true)
+    private void cancelExplosionRadius(S27PacketExplosion packetExplosion, CallbackInfo ci) {
+        AntiExploit module = AntiExploit.INSTANCE;
+
+        if (module.handleEvents() && module.getCancelExplosionRadius()) {
+            float originalRadius = packetExplosion.func_149149_c();
+            float radius = MathHelper.clamp_float(originalRadius, -100f, 100f);
+
+            if (radius != originalRadius) {
+                if (module.getWarn().equals("Chat")) {
+                    chat("Cancelled too big TNT explosion radius");
+                } else if (module.getWarn().equals("Notification")) {
+                    HUD.INSTANCE.addNotification(Notification.Companion.informative(module, "Cancelled too big TNT explosion radius", 1000L));
+                }
+                ci.cancel();
+            }
+        }
     }
 
     @Redirect(method = "handleParticles", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/play/server/S2APacketParticles;getParticleCount()I", ordinal = 1))
     private int onParticleAmount(S2APacketParticles packetParticles) {
-        if (AntiExploit.INSTANCE.getState() && AntiExploit.INSTANCE.getLimitParticlesAmount() && packetParticles.getParticleCount() >= 500) {
-            Chat.print("Limited too many particles");
+        AntiExploit module = AntiExploit.INSTANCE;
+
+        if (module.handleEvents() && module.getLimitParticlesAmount() && packetParticles.getParticleCount() >= 500) {
+            if (module.getWarn().equals("Chat")) {
+                chat("Limited too many particles");
+            } else if (module.getWarn().equals("Notification")) {
+                HUD.INSTANCE.addNotification(Notification.Companion.informative(module, "Limited too many particles", 1000L));
+            }
             return 100;
         }
         return packetParticles.getParticleCount();
@@ -103,8 +144,14 @@ public abstract class MixinNetHandlerPlayClient {
 
     @Redirect(method = "handleParticles", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/play/server/S2APacketParticles;getParticleSpeed()F"))
     private float onParticleSpeed(S2APacketParticles packetParticles) {
-        if (AntiExploit.INSTANCE.getState() && AntiExploit.INSTANCE.getLimitParticlesSpeed() && packetParticles.getParticleSpeed() >= 10f) {
-            Chat.print("Limited too fast particles speed");
+        AntiExploit module = AntiExploit.INSTANCE;
+
+        if (module.handleEvents() && module.getLimitParticlesSpeed() && packetParticles.getParticleSpeed() >= 10f) {
+            if (module.getWarn().equals("Chat")) {
+                chat("Limited too fast particles speed");
+            } else if (module.getWarn().equals("Notification")) {
+                HUD.INSTANCE.addNotification(Notification.Companion.informative(module, "Limited too fast particles speed", 1000L));
+            }
             return 5f;
         }
         return packetParticles.getParticleSpeed();
@@ -112,11 +159,34 @@ public abstract class MixinNetHandlerPlayClient {
 
     @Redirect(method = "handleSpawnObject", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/play/server/S0EPacketSpawnObject;getType()I"))
     private int onSpawnObjectType(S0EPacketSpawnObject packet) {
-        if (AntiExploit.INSTANCE.getState() && AntiExploit.INSTANCE.getLimitedArrowsSpawned() && packet.getType() == 60) {
-            int arrows = AntiExploit.INSTANCE.getArrowMax();
+        AntiExploit module = AntiExploit.INSTANCE;
+        
+        if (module.handleEvents() && module.getLimitedEntitySpawn()) {
+            if (packet.getType() == 60) {
+                int arrows = module.getArrowMax();
+                module.setArrowMax(arrows + 1);
 
-            if (++arrows >= AntiExploit.INSTANCE.getMaxArrowsSpawned()) {
-                return -1; // Cancel arrows spawn
+                if (arrows >= module.getMaxArrowsSpawned()) {
+                    if (module.getWarn().equals("Chat")) {
+                        chat("Limited too many arrows spawned");
+                    } else if (module.getWarn().equals("Notification")) {
+                        HUD.INSTANCE.addNotification(Notification.Companion.informative(module, "Limited too many arrows spawned", 1000L));
+                    }
+                    return -1;
+                }
+            }
+            if (packet.getType() == 2) {
+                int items = module.getItemMax();
+                module.setItemMax(items + 1);
+
+                if (items >= module.getMaxItemDropped()) {
+                    if (module.getWarn().equals("Chat")) {
+                        chat("Limited too many items dropped");
+                    } else if (module.getWarn().equals("Notification")) {
+                        HUD.INSTANCE.addNotification(Notification.Companion.informative(module,"Limited too many items dropped", 1000L));
+                    }
+                    return -1;
+                }
             }
         }
         return packet.getType();
@@ -124,7 +194,8 @@ public abstract class MixinNetHandlerPlayClient {
 
     @Redirect(method = "handleChangeGameState", at = @At(value = "INVOKE", target = "Lnet/minecraft/network/play/server/S2BPacketChangeGameState;getGameState()I"))
     private int onChangeGameState(S2BPacketChangeGameState packet) {
-        if (AntiExploit.INSTANCE.getState() && AntiExploit.INSTANCE.getCancelDemo() && mc.isDemo()) {
+        if (AntiExploit.INSTANCE.handleEvents() && AntiExploit.INSTANCE.getCancelDemo() && packet.getGameState() == 5) {
+            chat("Cancelled Demo GameState packet");
             return -1; // Cancel demo
         }
 
@@ -149,9 +220,7 @@ public abstract class MixinNetHandlerPlayClient {
             } catch (final URISyntaxException e) {
                 ClientUtils.INSTANCE.getLOGGER().error("Failed to handle resource pack", e);
 
-                // Accepted is always sent.
-                netManager.sendPacket(new C19PacketResourcePackStatus(hash, ACCEPTED));
-                // But we fail of course.
+                // We fail of course.
                 netManager.sendPacket(new C19PacketResourcePackStatus(hash, FAILED_DOWNLOAD));
 
                 callbackInfo.cancel();
@@ -185,7 +254,7 @@ public abstract class MixinNetHandlerPlayClient {
         final Entity entity = packetIn.getEntity(clientWorldController);
 
         if (entity != null)
-            EventManager.INSTANCE.callEvent(new EntityMovementEvent(entity));
+            EventManager.INSTANCE.call(new EntityMovementEvent(entity));
     }
 
     @Inject(method = "handlePlayerPosLook", at = @At(value = "INVOKE", target = "Lnet/minecraft/entity/player/EntityPlayer;setPositionAndRotation(DDDFF)V", shift = At.Shift.BEFORE))

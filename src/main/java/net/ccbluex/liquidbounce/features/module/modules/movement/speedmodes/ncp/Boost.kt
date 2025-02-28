@@ -6,7 +6,7 @@
 package net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.ncp
 
 import net.ccbluex.liquidbounce.features.module.modules.movement.speedmodes.SpeedMode
-import net.ccbluex.liquidbounce.utils.MovementUtils.isMoving
+import net.ccbluex.liquidbounce.utils.extensions.isMoving
 
 object Boost : SpeedMode("Boost") {
     private var motionDelay = 0
@@ -18,7 +18,11 @@ object Boost : SpeedMode("Boost") {
         var offset = 4.69
         var shouldOffset = true
 
-        if (mc.theWorld.getCollidingBoundingBoxes(thePlayer, thePlayer.entityBoundingBox.offset(thePlayer.motionX / offset, 0.0, thePlayer.motionZ / offset)).isNotEmpty()) {
+        if (mc.theWorld.getCollidingBoundingBoxes(
+                thePlayer,
+                thePlayer.entityBoundingBox.offset(thePlayer.motionX / offset, 0.0, thePlayer.motionZ / offset)
+            ).isNotEmpty()
+        ) {
             shouldOffset = false
         }
 
@@ -45,12 +49,18 @@ object Boost : SpeedMode("Boost") {
                     thePlayer.motionX *= speed
                     thePlayer.motionZ *= speed
                 }
+
                 2 -> {
                     thePlayer.motionX /= 1.458
                     thePlayer.motionZ /= 1.458
                 }
+
                 4 -> {
-                    if (shouldOffset) thePlayer.setPosition(thePlayer.posX + thePlayer.motionX / offset, thePlayer.posY, thePlayer.posZ + thePlayer.motionZ / offset)
+                    if (shouldOffset) thePlayer.setPosition(
+                        thePlayer.posX + thePlayer.motionX / offset,
+                        thePlayer.posY,
+                        thePlayer.posZ + thePlayer.motionZ / offset
+                    )
                     motionDelay = 0
                 }
             }
@@ -59,5 +69,5 @@ object Boost : SpeedMode("Boost") {
 
 
     private fun shouldSpeedUp() =
-        !mc.thePlayer.isInLava && !mc.thePlayer.isOnLadder && !mc.thePlayer.isSneaking && isMoving
+        !mc.thePlayer.isInLava && !mc.thePlayer.isOnLadder && !mc.thePlayer.isSneaking && mc.thePlayer.isMoving
 }

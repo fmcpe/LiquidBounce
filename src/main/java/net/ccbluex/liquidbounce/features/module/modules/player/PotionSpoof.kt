@@ -5,38 +5,35 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.player
 
-import net.ccbluex.liquidbounce.event.EventTarget
-import net.ccbluex.liquidbounce.event.UpdateEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.loopHandler
 import net.ccbluex.liquidbounce.features.module.Category
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.IntegerValue
-import net.minecraft.potion.PotionEffect
+import net.ccbluex.liquidbounce.features.module.Module
 import net.minecraft.potion.Potion.*
+import net.minecraft.potion.PotionEffect
 
-object PotionSpoof : Module("PotionSpoof", Category.PLAYER, hideModule = false) {
+object PotionSpoof : Module("PotionSpoof", Category.PLAYER) {
 
-    private val level by object : IntegerValue("PotionLevel", 2, 1..5) {
-        override fun onChanged(oldValue: Int, newValue: Int) = onDisable()
+    private val level by int("PotionLevel", 2, 1..5).onChanged {
+        onDisable()
     }
 
-    private val speedValue = BoolValue("Speed", false)
-    private val moveSlowDownValue = BoolValue("Slowness", false)
-    private val hasteValue = BoolValue("Haste", false)
-    private val digSlowDownValue = BoolValue("MiningFatigue", false)
-    private val blindnessValue = BoolValue("Blindness", false)
-    private val strengthValue = BoolValue("Strength", false)
-    private val jumpBoostValue = BoolValue("JumpBoost", false)
-    private val weaknessValue = BoolValue("Weakness", false)
-    private val regenerationValue = BoolValue("Regeneration", false)
-    private val witherValue = BoolValue("Wither", false)
-    private val resistanceValue = BoolValue("Resistance", false)
-    private val fireResistanceValue = BoolValue("FireResistance", false)
-    private val absorptionValue = BoolValue("Absorption", false)
-    private val healthBoostValue = BoolValue("HealthBoost", false)
-    private val poisonValue = BoolValue("Poison", false)
-    private val saturationValue = BoolValue("Saturation", false)
-    private val waterBreathingValue = BoolValue("WaterBreathing", false)
+    private val speedValue = boolean("Speed", false)
+    private val moveSlowDownValue = boolean("Slowness", false)
+    private val hasteValue = boolean("Haste", false)
+    private val digSlowDownValue = boolean("MiningFatigue", false)
+    private val blindnessValue = boolean("Blindness", false)
+    private val strengthValue = boolean("Strength", false)
+    private val jumpBoostValue = boolean("JumpBoost", false)
+    private val weaknessValue = boolean("Weakness", false)
+    private val regenerationValue = boolean("Regeneration", false)
+    private val witherValue = boolean("Wither", false)
+    private val resistanceValue = boolean("Resistance", false)
+    private val fireResistanceValue = boolean("FireResistance", false)
+    private val absorptionValue = boolean("Absorption", false)
+    private val healthBoostValue = boolean("HealthBoost", false)
+    private val poisonValue = boolean("Poison", false)
+    private val saturationValue = boolean("Saturation", false)
+    private val waterBreathingValue = boolean("WaterBreathing", false)
 
     private val potionMap = mapOf(
         moveSpeed.id to speedValue,
@@ -66,12 +63,12 @@ object PotionSpoof : Module("PotionSpoof", Category.PLAYER, hideModule = false) 
             .forEach { mc.thePlayer.removePotionEffect(it.potionID) }
     }
 
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) =
+    val onUpdate = loopHandler {
         potionMap.forEach { (potionId, value) ->
             if (value.get())
                 mc.thePlayer.addPotionEffect(PotionEffect(potionId, 0, level - 1, false, false))
             else if (mc.thePlayer.activePotionEffects.any { it.duration == 0 && it.potionID == potionId })
                 mc.thePlayer.removePotionEffect(potionId)
         }
+    }
 }

@@ -5,7 +5,7 @@ plugins {
     id "com.github.johnrengelman.shadow" version "6.1.0"
     id "net.minecraftforge.gradle.forge"
     id "org.spongepowered.mixin"
-    id "com.gorylenko.gradle-git-properties" version "2.4.0"
+    id "com.gorylenko.gradle-git-properties" version "2.4.2"
 }
 
 repositories {
@@ -33,16 +33,15 @@ minecraft {
     runDir = "run"
     mappings = "stable_22"
     makeObfSourceJar = false
-    clientJvmArgs += ["-Dfml.coreMods.load=net.ccbluex.liquidbounce.injection.forge.MixinLoader", "-Xmx4096m -Xms1024m", "-Ddev-mode"]
+    clientJvmArgs += ["-Dfml.coreMods.load=net.ccbluex.liquidbounce.injection.forge.MixinLoader", "-Xmx4096m", "-Xms1024m", "-Ddev-mode"]
 }
 
 configurations {
-    include
-    implementation.extendsFrom(include)
+    runtimeOnly.canBeResolved = true
 }
 
 dependencies {
-    include("org.spongepowered:mixin:0.7.11-SNAPSHOT") {
+    implementation("org.spongepowered:mixin:0.7.11-SNAPSHOT") {
         transitive = false
         exclude module: "guava"
         exclude module: "commons-io"
@@ -54,28 +53,36 @@ dependencies {
 
     annotationProcessor("org.spongepowered:mixin:0.7.11-SNAPSHOT")
 
-    include "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+    implementation "com.jagrosh:DiscordIPC:0.4"
 
-    include "com.jagrosh:DiscordIPC:0.4"
-
-    include("com.github.CCBlueX:Elixir:1.2.6") {
+    implementation("com.github.CCBlueX:Elixir:1.2.6") {
         exclude module: "kotlin-stdlib"
         exclude module: "authlib"
     }
 
-    include 'com.github.TheAltening:TheAltening4j:d0771f42d3'
-    include 'com.github.TheAltening:API-Java-AuthLib:63a9702615'
+    implementation 'com.github.TheAltening:TheAltening4j:d0771f42d3'
+    implementation 'com.github.TheAltening:API-Java-AuthLib:63a9702615'
 
-    include "org.apache.httpcomponents:httpmime:4.5.14"
+    implementation("org.knowm.xchart:xchart:3.8.8")
 
-    include "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.4"
+    // HTTP Client
+    implementation("com.squareup.okhttp3:okhttp:5.0.0-alpha.14") {
+        exclude module: "kotlin-stdlib"
+    }
 
-    include fileTree(include: ["*.jar"], dir: "libs")
+    // Kotlin
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:$kotlin_version"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:$kotlin_coroutines_version"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:$kotlin_coroutines_version"
+
+    // Swing LookAndFeel
+    implementation "com.formdev:flatlaf:3.5.4"
+
+    implementation fileTree(include: ["*.jar"], dir: "libs")
 }
 
 shadowJar {
     archiveClassifier.set("")
-    configurations = [project.configurations.include]
     duplicatesStrategy DuplicatesStrategy.EXCLUDE
 
     exclude "LICENSE.txt"
@@ -101,8 +108,10 @@ processResources {
 
 task moveResources {
     doLast {
-        ant.move file: "${buildDir}/resources/main",
-                todir: "${buildDir}/classes/java"
+        copy {
+            from "${buildDir}/resources/main"
+            into "${buildDir}/classes/java"
+        }
     }
 }
 
@@ -119,6 +128,7 @@ jar {
             "TweakClass": "org.spongepowered.asm.launch.MixinTweaker",
             "TweakOrder": "0",
             "FMLAT": "liquidbounce_at.cfg",
+            "Main-Class": "net.ccbluex.liquidinstruction.LiquidInstructionKt",
     )
 
     enabled = false
@@ -136,7 +146,9 @@ reobf {
     }
 }
 
-tasks.reobfJar.dependsOn(shadowJar)
+jar.dependsOn("shadowJar")
+
+tasks.reobfShadowJar.mustRunAfter shadowJar
 
 task copyZipInclude(type: Copy) {
     from 'zip_include/'

@@ -5,12 +5,14 @@
  */
 package net.ccbluex.liquidbounce.tabs
 
-import com.google.gson.JsonParser
 import kotlinx.coroutines.*
 import net.ccbluex.liquidbounce.LiquidBounce.CLIENT_CLOUD
-import net.ccbluex.liquidbounce.utils.ClientUtils.LOGGER
+import net.ccbluex.liquidbounce.utils.client.ClientUtils.LOGGER
+import net.ccbluex.liquidbounce.utils.kotlin.SharedScopes
 import net.ccbluex.liquidbounce.utils.inventory.ItemUtils
-import net.ccbluex.liquidbounce.utils.misc.HttpUtils.get
+import net.ccbluex.liquidbounce.utils.io.HttpClient
+import net.ccbluex.liquidbounce.utils.io.get
+import net.ccbluex.liquidbounce.utils.io.jsonBody
 import net.minecraft.creativetab.CreativeTabs
 import net.minecraft.init.Items
 import net.minecraft.item.Item
@@ -19,7 +21,7 @@ import net.minecraft.item.ItemStack
 class HeadsTab : CreativeTabs("Heads") {
 
     // List of heads
-    private val heads = arrayListOf<ItemStack>()
+    private var heads = emptyList<ItemStack>()
 
     /**
      * Constructor of heads tab
@@ -28,54 +30,33 @@ class HeadsTab : CreativeTabs("Heads") {
         backgroundImageName = "item_search.png"
 
         // Launch the coroutine to load heads asynchronously
-        GlobalScope.launch { loadHeads() }
+        SharedScopes.IO.launch { loadHeads() }
     }
 
-    private suspend fun loadHeads() {
-        runBlocking {
-            runCatching {
-                LOGGER.info("Loading heads...")
+    private fun loadHeads() {
+        try {
+            LOGGER.info("Loading heads...")
 
-                // Asynchronously fetch the heads configuration
-                val responseDeferred = async { get("$CLIENT_CLOUD/heads.json") }
-                val (response, _) = responseDeferred.await()
-                val headsConfiguration = JsonParser().parse(response)
+            // Asynchronously fetch the heads configuration
+            val headsConf = HttpClient.get("$CLIENT_CLOUD/heads.json").jsonBody<HeadsConfiguration>() ?: return
 
-                // Process the heads configuration
-                if (!headsConfiguration.isJsonObject) return@runBlocking
+            if (headsConf.enabled) {
+                val url = headsConf.url
 
-                val headsConf = headsConfiguration.asJsonObject
+                LOGGER.info("Loading heads from $url...")
 
-                if (headsConf["enabled"].asBoolean) {
-                    val url = headsConf["url"].asString
+                val headsMap = HttpClient.get(url).jsonBody<Map<String, HeadInfo>>() ?: return
 
-                    LOGGER.info("Loading heads from $url...")
+                heads = headsMap.values.map { head ->
+                    ItemUtils.createItem("skull 1 3 {display:{Name:\"${head.name}\"},SkullOwner:{Id:\"${head.uuid}\",Properties:{textures:[{Value:\"${head.value}\"}]}}}")!!
+                }
 
-                    // Asynchronously fetch the heads data
-                    val headsResponseDeferred = async { get(url) }
-                    val (headsResponse, _) = headsResponseDeferred.await()
-                    val headsElement = JsonParser().parse(headsResponse)
-
-                    // Process the heads data
-                    if (!headsElement.isJsonObject) {
-                        LOGGER.error("Something is wrong, the heads json is not a JsonObject!")
-                        return@runBlocking
-                    }
-
-                    val headsObject = headsElement.asJsonObject
-
-                    for ((_, value) in headsObject.entrySet()) {
-                        val headElement = value.asJsonObject
-
-                        heads += ItemUtils.createItem("skull 1 3 {display:{Name:\"${headElement["name"].asString}\"},SkullOwner:{Id:\"${headElement["uuid"].asString}\",Properties:{textures:[{Value:\"${headElement["value"].asString}\"}]}}}")!!
-                    }
-
-                    LOGGER.info("Loaded ${heads.size} heads from HeadDB.")
-                } else
-                    LOGGER.info("Heads are disabled.")
-            }.onFailure {
-                LOGGER.error("Error while reading heads.", it)
+                LOGGER.info("Loaded ${heads.size} heads from HeadDB.")
+            } else {
+                LOGGER.info("Heads are disabled.")
             }
+        } catch (e: Exception) {
+            LOGGER.error("Error while reading heads.", e)
         }
     }
 
@@ -107,3 +88,8 @@ class HeadsTab : CreativeTabs("Heads") {
      */
     override fun hasSearchBar() = true
 }
+
+private class HeadsConfiguration(val enabled: Boolean, val url: String)
+
+// Only includes needed fields
+private class HeadInfo(val name: String, val uuid: String, val value: String)

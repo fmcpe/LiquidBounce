@@ -6,33 +6,30 @@
 package net.ccbluex.liquidbounce.features.module.modules.misc
 
 import net.ccbluex.liquidbounce.LiquidBounce.hud
-import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.PacketEvent
 import net.ccbluex.liquidbounce.event.UpdateEvent
 import net.ccbluex.liquidbounce.event.WorldEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.Category
+import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.modules.combat.KillAura
 import net.ccbluex.liquidbounce.features.module.modules.movement.Fly
 import net.ccbluex.liquidbounce.features.module.modules.movement.Speed
-import net.ccbluex.liquidbounce.features.module.modules.world.scaffolds.*
-import net.ccbluex.liquidbounce.script.api.global.Chat
+import net.ccbluex.liquidbounce.features.module.modules.world.scaffolds.Scaffold
 import net.ccbluex.liquidbounce.ui.client.hud.element.elements.Notification
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.ListValue
+import net.ccbluex.liquidbounce.utils.client.chat
 import net.minecraft.network.play.server.S08PacketPlayerPosLook
 
-object AutoDisable : Module("AutoDisable", Category.MISC, gameDetecting = false, hideModule = false) {
-    val modulesList = arrayListOf(KillAura, Scaffold, Fly, Speed)
+object AutoDisable : Module("AutoDisable", Category.MISC, gameDetecting = false) {
+    private val modulesList = hashSetOf(KillAura, Scaffold, Fly, Speed)
 
-    private val onFlagged by BoolValue("onFlag", true)
-    private val onWorldChange by BoolValue("onWorldChange", false)
-    private val onDeath by BoolValue("onDeath", false)
+    private val onFlagged by boolean("onFlag", true)
+    private val onWorldChange by boolean("onWorldChange", false)
+    private val onDeath by boolean("onDeath", false)
 
-    private val warn by ListValue("Warn", arrayOf("Chat", "Notification"), "Chat")
+    private val warn by choices("Warn", arrayOf("Chat", "Notification"), "Chat")
 
-    @EventTarget
-    fun onPacket(event: PacketEvent) {
+    val onPacket = handler<PacketEvent> { event ->
         val packet = event.packet
 
         if (packet is S08PacketPlayerPosLook && onFlagged) {
@@ -40,37 +37,32 @@ object AutoDisable : Module("AutoDisable", Category.MISC, gameDetecting = false,
         }
     }
 
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
-        val player = mc.thePlayer ?: return
+    val onUpdate = handler<UpdateEvent> {
+        val player = mc.thePlayer ?: return@handler
 
         if (onDeath && player.isDead) {
             disabled("deaths")
         }
     }
 
-    @EventTarget
-    fun onWorld(event: WorldEvent) {
+    val onWorld = handler<WorldEvent> {
         if (onWorldChange) {
             disabled("world changed")
         }
     }
 
     private fun disabled(reason: String) {
-        val anyModuleEnabled = modulesList.any { it.state }
+        val enabledModules = modulesList.filter { it.state }
 
-        if (anyModuleEnabled) {
-            modulesList.forEach { module ->
-                if (module.state) {
-                    module.state = false
-                    module.onDisable()
-                }
+        if (enabledModules.isNotEmpty()) {
+            enabledModules.forEach { module ->
+                module.state = false
             }
 
             if (warn == "Chat") {
-                Chat.print("§eModules have been disabled due to §c$reason")
+                chat("§eModules have been disabled due to §c$reason")
             } else {
-                hud.addNotification(Notification("Modules have been disabled due to $reason", 2000F))
+                hud.addNotification(Notification.informative(this, "Modules have been disabled due to $reason", 2000L))
             }
         }
     }
@@ -85,7 +77,7 @@ object AutoDisable : Module("AutoDisable", Category.MISC, gameDetecting = false,
         modulesList.remove(module)
     }
 
-    fun getModules(): List<Module> {
-        return modulesList.toList()
+    fun getModules(): Collection<Module> {
+        return modulesList
     }
 }

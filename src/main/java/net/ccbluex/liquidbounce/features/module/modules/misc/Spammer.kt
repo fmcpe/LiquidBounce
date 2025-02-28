@@ -5,71 +5,58 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.misc
 
+import kotlinx.coroutines.delay
 import net.ccbluex.liquidbounce.LiquidBounce.CLIENT_NAME
-import net.ccbluex.liquidbounce.event.EventTarget
-import net.ccbluex.liquidbounce.event.UpdateEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.loopHandler
 import net.ccbluex.liquidbounce.features.module.Category
-import net.ccbluex.liquidbounce.utils.misc.RandomUtils.nextFloat
-import net.ccbluex.liquidbounce.utils.misc.RandomUtils.nextInt
-import net.ccbluex.liquidbounce.utils.misc.RandomUtils.randomString
-import net.ccbluex.liquidbounce.utils.timing.MSTimer
-import net.ccbluex.liquidbounce.utils.timing.TimeUtils.randomDelay
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.IntegerValue
-import net.ccbluex.liquidbounce.value.TextValue
+import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.utils.kotlin.RandomUtils.nextFloat
+import net.ccbluex.liquidbounce.utils.kotlin.RandomUtils.nextInt
+import net.ccbluex.liquidbounce.utils.kotlin.RandomUtils.randomString
 
-object Spammer : Module("Spammer", Category.MISC, subjective = true, hideModule = false) {
-    private val maxDelayValue: IntegerValue = object : IntegerValue("MaxDelay", 1000, 0..5000) {
-        override fun onChange(oldValue: Int, newValue: Int) = newValue.coerceAtLeast(minDelay)
+object Spammer : Module("Spammer", Category.MISC, subjective = true) {
 
-        override fun onChanged(oldValue: Int, newValue: Int) {
-            delay = randomDelay(minDelay, get())
-        }
-    }
-    private val maxDelay by maxDelayValue
+    private val delay by intRange("Delay", 500..1000, 0..5000)
 
-    private val minDelay: Int by object : IntegerValue("MinDelay", 500, 0..5000) {
-        override fun onChange(oldValue: Int, newValue: Int) = newValue.coerceAtMost(maxDelay)
+    private val message by text("Message", "$CLIENT_NAME Client | liquidbounce(.net) | CCBlueX on yt")
 
-        override fun onChanged(oldValue: Int, newValue: Int) {
-            delay = randomDelay(get(), maxDelay)
-        }
+    private val custom by boolean("Custom", false)
 
-        override fun isSupported() = !maxDelayValue.isMinimal()
-    }
+    val onUpdate = loopHandler {
+        mc.thePlayer.sendChatMessage(
+            if (custom) replace(message)
+            else message + " >" + randomString(nextInt(5, 11)) + "<"
+        )
 
-    private val message by
-        TextValue("Message", "$CLIENT_NAME Client | liquidbounce(.net) | CCBlueX on yt")
-
-    private val custom by BoolValue("Custom", false)
-
-    private val msTimer = MSTimer()
-    private var delay = randomDelay(minDelay, maxDelay)
-
-    @EventTarget
-    fun onUpdate(event: UpdateEvent) {
-        if (msTimer.hasTimePassed(delay)) {
-            mc.thePlayer.sendChatMessage(
-                if (custom) replace(message)
-                else message + " >" + randomString(nextInt(5, 11)) + "<"
-            )
-            msTimer.reset()
-            delay = randomDelay(minDelay, maxDelay)
-        }
+        delay(delay.random().toLong())
     }
 
     private fun replace(text: String): String {
         var replacedStr = text
 
         replaceMap.forEach { (key, valueFunc) ->
-            while (key in replacedStr) {
-                // You have to replace them one by one, otherwise all parameters like %s would be set to the same random string.
-                replacedStr = replacedStr.replaceFirst(key, valueFunc())
-            }
+            replacedStr = replacedStr.replace(key, valueFunc)
         }
 
         return replacedStr
+    }
+
+    private inline fun String.replace(oldValue: String, newValueProvider: () -> Any): String {
+        var index = 0
+        val newString = StringBuilder(this)
+        while (true) {
+            index = newString.indexOf(oldValue, startIndex = index)
+            if (index == -1) {
+                break
+            }
+
+            // You have to replace them one by one, otherwise all parameters like %s would be set to the same random string.
+            val newValue = newValueProvider().toString()
+            newString.replace(index, index + oldValue.length, newValue)
+
+            index += newValue.length
+        }
+        return newString.toString()
     }
 
     private fun randomPlayer() =

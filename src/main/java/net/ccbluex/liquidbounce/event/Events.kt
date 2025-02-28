@@ -5,14 +5,14 @@
  */
 package net.ccbluex.liquidbounce.event
 
+import net.ccbluex.liquidbounce.features.module.modules.render.FreeCam
+import net.ccbluex.liquidbounce.utils.extensions.withY
 import net.minecraft.block.Block
 import net.minecraft.client.gui.GuiScreen
 import net.minecraft.client.multiplayer.WorldClient
 import net.minecraft.entity.Entity
 import net.minecraft.network.Packet
-import net.minecraft.util.AxisAlignedBB
-import net.minecraft.util.BlockPos
-import net.minecraft.util.EnumFacing
+import net.minecraft.util.*
 
 /**
  * Called when player attacks other entity
@@ -42,7 +42,7 @@ class ClickBlockEvent(val clickedBlock: BlockPos?, val enumFacing: EnumFacing?) 
 /**
  * Called when client is shutting down
  */
-class ClientShutdownEvent : Event()
+object ClientShutdownEvent : Event()
 
 /**
  * Called when another entity moves
@@ -54,7 +54,7 @@ data class EntityMovementEvent(val movedEntity: Entity) : Event()
  *
  * @param motion jump motion (y motion)
  */
-class JumpEvent(var motion: Float) : CancellableEvent()
+class JumpEvent(var motion: Float, val eventState: EventState) : CancellableEvent()
 
 /**
  * Called when user press a key once
@@ -68,7 +68,8 @@ class KeyEvent(val key: Int) : Event()
  *
  * @param eventState PRE or POST
  */
-class MotionEvent(val eventState: EventState) : Event()
+class MotionEvent(var x: Double, var y: Double, var z: Double, var onGround: Boolean, val eventState: EventState) :
+    Event()
 
 /**
  * Called in "onLivingUpdate" when the player is using a use item.
@@ -87,9 +88,16 @@ class SlowDownEvent(var strafe: Float, var forward: Float) : Event()
 class SneakSlowDownEvent(var strafe: Float, var forward: Float) : Event()
 
 /**
+ * Called in "onLivingUpdate" after the movement input update.
+ *
+ * @param originalInput the movement input after the update
+ */
+class MovementInputEvent(var originalInput: MovementInput) : Event()
+
+/**
  * Called in "onLivingUpdate" after when the player's sprint states are updated
  */
-class PostSprintUpdateEvent : Event()
+object PostSprintUpdateEvent : Event()
 
 /**
  * Called in "moveFlying"
@@ -126,7 +134,7 @@ class PacketEvent(val packet: Packet<*>, val eventType: EventState) : Cancellabl
 /**
  * Called when a block tries to push you
  */
-class PushOutEvent : CancellableEvent()
+class BlockPushEvent : CancellableEvent()
 
 /**
  * Called when screen is going to be rendered
@@ -136,7 +144,7 @@ class Render2DEvent(val partialTicks: Float) : Event()
 /**
  * Called when packets sent to client are processed
  */
-class GameLoopEvent : Event()
+object GameLoopEvent : Event()
 
 /**
  * Called when world is going to be rendered
@@ -151,7 +159,7 @@ class ScreenEvent(val guiScreen: GuiScreen?) : Event()
 /**
  * Called when the session changes
  */
-class SessionEvent : Event()
+object SessionUpdateEvent : Event()
 
 /**
  * Called when player is going to step
@@ -161,24 +169,41 @@ class StepEvent(var stepHeight: Float) : Event()
 /**
  * Called when player step is confirmed
  */
-class StepConfirmEvent : Event()
+object StepConfirmEvent : Event()
 
 /**
  * tick... tack... tick... tack
  */
-class GameTickEvent : Event()
+object GameTickEvent : Event()
+
+object TickEndEvent : Event()
 
 /**
  * tick tack for player
  */
 class PlayerTickEvent(val state: EventState) : CancellableEvent()
 
-class RotationUpdateEvent : Event()
+object RotationUpdateEvent : Event()
+
+class RotationSetEvent(var yawDiff: Float, var pitchDiff: Float) : CancellableEvent()
+
+class CameraPositionEvent(
+    private val currPos: Vec3, private val prevPos: Vec3, private val lastTickPos: Vec3,
+    var result: FreeCam.PositionPair? = null,
+) : Event() {
+    fun withY(value: Double) {
+        result = FreeCam.PositionPair(currPos.withY(value), prevPos.withY(value), lastTickPos.withY(value))
+    }
+}
+
+class ClientSlotChangeEvent(var supposedSlot: Int, var modifiedSlot: Int) : Event()
+
+class DelayedPacketProcessEvent : CancellableEvent()
 
 /**
  * Called when minecraft player will be updated
  */
-class UpdateEvent : Event()
+object UpdateEvent : Event()
 
 /**
  * Called when the world changes
@@ -194,4 +219,42 @@ class ClickWindowEvent(val windowId: Int, val slotId: Int, val mouseButtonClicke
 /**
  * Called when LiquidBounce finishes starting up
  */
-class StartupEvent : Event()
+object StartupEvent : Event()
+
+internal val ALL_EVENT_CLASSES = arrayOf(
+    PlayerTickEvent::class.java,
+    StepConfirmEvent::class.java,
+    SessionUpdateEvent::class.java,
+    MovementInputEvent::class.java,
+    GameLoopEvent::class.java,
+    Render2DEvent::class.java,
+    ClickWindowEvent::class.java,
+    StartupEvent::class.java,
+    SneakSlowDownEvent::class.java,
+    PostSprintUpdateEvent::class.java,
+    KeyEvent::class.java,
+    SlowDownEvent::class.java,
+    TickEndEvent::class.java,
+    JumpEvent::class.java,
+    MoveEvent::class.java,
+    ClientShutdownEvent::class.java,
+    GameTickEvent::class.java,
+    StepEvent::class.java,
+    BlockBBEvent::class.java,
+    ClickBlockEvent::class.java,
+    UpdateEvent::class.java,
+    RotationSetEvent::class.java,
+    EntityMovementEvent::class.java,
+    ClientSlotChangeEvent::class.java,
+    PacketEvent::class.java,
+    CameraPositionEvent::class.java,
+    RotationUpdateEvent::class.java,
+    StrafeEvent::class.java,
+    ScreenEvent::class.java,
+    AttackEvent::class.java,
+    BlockPushEvent::class.java,
+    Render3DEvent::class.java,
+    MotionEvent::class.java,
+    WorldEvent::class.java,
+    DelayedPacketProcessEvent::class.java
+)

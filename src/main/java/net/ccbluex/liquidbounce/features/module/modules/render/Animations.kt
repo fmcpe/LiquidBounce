@@ -9,15 +9,12 @@ import net.ccbluex.liquidbounce.features.module.Category
 import net.ccbluex.liquidbounce.features.module.Module
 import net.ccbluex.liquidbounce.features.module.modules.render.Animations.animations
 import net.ccbluex.liquidbounce.features.module.modules.render.Animations.defaultAnimation
-import net.ccbluex.liquidbounce.utils.MinecraftInstance
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.FloatValue
-import net.ccbluex.liquidbounce.value.IntegerValue
-import net.ccbluex.liquidbounce.value.ListValue
+import net.ccbluex.liquidbounce.utils.client.MinecraftInstance
 import net.minecraft.client.entity.AbstractClientPlayer
 import net.minecraft.client.renderer.GlStateManager.*
 import net.minecraft.util.MathHelper
-import org.lwjgl.opengl.GL11.*
+import org.lwjgl.opengl.GL11.glTranslated
+import org.lwjgl.opengl.GL11.glTranslatef
 
 /**
  * Animations module
@@ -37,14 +34,15 @@ import org.lwjgl.opengl.GL11.*
  *
  * @author CCBlueX
  */
-object Animations : Module("Animations", Category.RENDER, gameDetecting = false, hideModule = false) {
+object Animations : Module("Animations", Category.RENDER, gameDetecting = false) {
 
     // Default animation
     val defaultAnimation = OneSevenAnimation()
 
     private val animations = arrayOf(
         OneSevenAnimation(),
-        PushdownAnimation(),
+        OldPushdownAnimation(),
+        NewPushdownAnimation(),
         OldAnimation(),
         HeliumAnimation(),
         ArgonAnimation(),
@@ -52,16 +50,16 @@ object Animations : Module("Animations", Category.RENDER, gameDetecting = false,
         SulfurAnimation()
     )
 
-    private val animationMode by ListValue("Mode", animations.map { it.name }.toTypedArray(), "Pushdown")
-    val oddSwing by BoolValue("OddSwing", false)
-    val swingSpeed by IntegerValue("SwingSpeed", 15, 0..20)
+    private val animationMode by choices("Mode", animations.map { it.name }.toTypedArray(), "NewPushdown")
+    val oddSwing by boolean("OddSwing", false)
+    val swingSpeed by int("SwingSpeed", 15, 0..20)
 
-    val handItemScale by FloatValue("ItemScale", 0f, -5f..5f)
-    val handX by FloatValue("X", 0f, -5f..5f)
-    val handY by FloatValue("Y", 0f, -5f..5f)
-    val handPosX by FloatValue("PositionRotationX", 0f, -50f..50f)
-    val handPosY by FloatValue("PositionRotationY", 0f, -50f..50f)
-    val handPosZ by FloatValue("PositionRotationZ", 0f, -50f..50f)
+    val handItemScale by float("ItemScale", 0f, -5f..5f)
+    val handX by float("X", 0f, -5f..5f)
+    val handY by float("Y", 0f, -5f..5f)
+    val handPosX by float("PositionRotationX", 0f, -50f..50f)
+    val handPosY by float("PositionRotationY", 0f, -50f..50f)
+    val handPosZ by float("PositionRotationZ", 0f, -50f..50f)
 
     fun getAnimation() = animations.firstOrNull { it.name == animationMode }
 
@@ -75,7 +73,7 @@ object Animations : Module("Animations", Category.RENDER, gameDetecting = false,
  *
  * @author CCBlueX
  */
-abstract class Animation(val name: String) : MinecraftInstance() {
+abstract class Animation(val name: String) : MinecraftInstance {
     abstract fun transform(f1: Float, f: Float, clientPlayer: AbstractClientPlayer)
 
     /**
@@ -131,9 +129,9 @@ class OldAnimation : Animation("Old") {
 }
 
 /**
- * Pushdown animation
+ * Old Pushdown animation.
  */
-class PushdownAnimation : Animation("Pushdown") {
+class OldPushdownAnimation : Animation("OldPushdown") {
 
     /**
      * @author CzechHek. Taken from Animations script.
@@ -157,6 +155,34 @@ class PushdownAnimation : Animation("Pushdown") {
         rotate(60f, 0f, 1f, 0f)
         glTranslated(1.05, 0.35, 0.4)
         glTranslatef(-1f, 0f, 0f)
+    }
+
+}
+
+/**
+ * New Pushdown animation.
+ * @author EclipsesDev
+ *
+ * Taken from NightX Moon Animation (I made it smoother here xd)
+ */
+class NewPushdownAnimation : Animation("NewPushdown") {
+
+    override fun transform(f1: Float, f: Float, clientPlayer: AbstractClientPlayer) {
+        val x = Animations.handPosX - 0.08
+        val y = Animations.handPosY + 0.12
+        val z = Animations.handPosZ.toDouble()
+        translate(x, y, z)
+
+        val var9 = MathHelper.sin(MathHelper.sqrt_float(f1) * 3.1415927f)
+        translate(0.0, 0.0, 0.0)
+
+        transformFirstPersonItem(f / 1.4f, 0.0f)
+
+        rotate(-var9 * 65.0f / 2.0f, var9 / 2.0f, 1.0f, 4.0f)
+        rotate(-var9 * 60.0f, 1.0f, var9 / 3.0f, -0.0f)
+        doBlockTransformations()
+
+        scale(1.0, 1.0, 1.0)
     }
 
 }
@@ -201,7 +227,7 @@ class CesiumAnimation : Animation("Cesium") {
         transformFirstPersonItem(f, 0.0f)
         rotate(-c4 * 10.0f / 20.0f, c4 / 2.0f, 0.0f, 4.0f)
         rotate(-c4 * 30.0f, 0.0f, c4 / 3.0f, 0.0f)
-        rotate(-c4 * 10.0f, 1.0f, c4/10.0f, 0.0f)
+        rotate(-c4 * 10.0f, 1.0f, c4 / 10.0f, 0.0f)
         translate(0.0, 0.2, 0.0)
         doBlockTransformations()
     }

@@ -11,24 +11,28 @@ import com.mojang.authlib.yggdrasil.YggdrasilAuthenticationService
 import com.mojang.authlib.yggdrasil.YggdrasilUserAuthentication
 import com.thealtening.AltService
 import com.thealtening.api.TheAltening
+import kotlinx.coroutines.launch
 import net.ccbluex.liquidbounce.LiquidBounce.CLIENT_NAME
-import net.ccbluex.liquidbounce.event.EventManager.callEvent
-import net.ccbluex.liquidbounce.event.SessionEvent
+import net.ccbluex.liquidbounce.event.EventManager.call
+import net.ccbluex.liquidbounce.event.SessionUpdateEvent
+import net.ccbluex.liquidbounce.lang.translationButton
 import net.ccbluex.liquidbounce.ui.client.altmanager.GuiAltManager
 import net.ccbluex.liquidbounce.ui.elements.GuiPasswordField
+import net.ccbluex.liquidbounce.ui.font.AWTFontRenderer.Companion.assumeNonVolatile
 import net.ccbluex.liquidbounce.ui.font.Fonts
-import net.ccbluex.liquidbounce.utils.ClientUtils.LOGGER
-import net.ccbluex.liquidbounce.utils.TabUtils
-import net.ccbluex.liquidbounce.utils.misc.MiscUtils
+import net.ccbluex.liquidbounce.utils.client.ClientUtils.LOGGER
+import net.ccbluex.liquidbounce.utils.client.TabUtils
+import net.ccbluex.liquidbounce.utils.io.MiscUtils
+import net.ccbluex.liquidbounce.utils.kotlin.SharedScopes
 import net.ccbluex.liquidbounce.utils.render.RenderUtils.drawRect
+import net.ccbluex.liquidbounce.utils.ui.AbstractScreen
 import net.minecraft.client.gui.GuiButton
-import net.minecraft.client.gui.GuiScreen
 import net.minecraft.client.gui.GuiTextField
 import net.minecraft.util.Session
 import org.lwjgl.input.Keyboard
 import java.net.Proxy.NO_PROXY
 
-class GuiTheAltening(private val prevGui: GuiAltManager) : GuiScreen() {
+class GuiTheAltening(private val prevGui: GuiAltManager) : AbstractScreen() {
 
     // Data Storage
     companion object {
@@ -54,24 +58,22 @@ class GuiTheAltening(private val prevGui: GuiAltManager) : GuiScreen() {
         Keyboard.enableRepeatEvents(true)
 
         // Login button
-        buttonList.run {
-            add(GuiButton(2, width / 2 - 100, height / 2 - 90, "Login").also { loginButton = it })
+        loginButton = +GuiButton(2, width / 2 - 100, height / 2 - 90, translationButton("altManager.login"))
 
-            // Generate button
-            add(GuiButton(1, width / 2 - 100, height / 2, "Generate").also { generateButton = it })
+        // Generate button
+        generateButton = +GuiButton(1, width / 2 - 100, height / 2, "Generate")
 
-            // Buy & Back buttons
-            add(GuiButton(3, width / 2 - 100, height / 2 + 70, 98, 20, "Buy"))
-            add(GuiButton(0, width / 2 + 2, height / 2 + 70, 98, 20, "Back"))
-        }
+        // Buy & Back buttons
+        +GuiButton(3, width / 2 - 100, height / 2 + 70, 98, 20, translationButton("altManager.buy"))
+        +GuiButton(0, width / 2 + 2, height / 2 + 70, 98, 20, translationButton("back"))
 
         // Token text field
-        tokenField = GuiTextField(666, Fonts.font40, width / 2 - 100, height / 2 - 120, 200, 20)
+        tokenField = GuiTextField(666, Fonts.fontSemibold40, width / 2 - 100, height / 2 - 120, 200, 20)
         tokenField.isFocused = false
         tokenField.maxStringLength = 64
 
         // Api key password field
-        apiKeyField = GuiPasswordField(1337, Fonts.font40, width / 2 - 100, height / 2 - 30, 200, 20)
+        apiKeyField = GuiPasswordField(1337, Fonts.fontSemibold40, width / 2 - 100, height / 2 - 30, 200, 20)
         apiKeyField.maxStringLength = 18
         apiKeyField.text = apiKey
         super.initGui()
@@ -81,24 +83,32 @@ class GuiTheAltening(private val prevGui: GuiAltManager) : GuiScreen() {
      * Draw screen
      */
     override fun drawScreen(mouseX: Int, mouseY: Int, partialTicks: Float) {
-        // Draw background to screen
-        drawBackground(0)
-        drawRect(30f, 30f, width - 30f, height - 30f, Integer.MIN_VALUE)
+        assumeNonVolatile {
+            // Draw background to screen
+            drawBackground(0)
+            drawRect(30f, 30f, width - 30f, height - 30f, Integer.MIN_VALUE)
 
-        // Draw title and status
-        Fonts.font40.drawCenteredString("TheAltening", width / 2f, height / 2 - 180f, 0xffffff)
-        Fonts.font35.drawCenteredString(status, width / 2f, height / 2 + 30f, 0xffffff)
+            // Draw title and status
+            Fonts.fontSemibold40.drawCenteredString("TheAltening", width / 2f, height / 2 - 180f, 0xffffff)
+            Fonts.fontSemibold35.drawCenteredString(status, width / 2f, height / 2 + 30f, 0xffffff)
 
-        // Draw fields
-        apiKeyField.drawTextBox()
-        tokenField.drawTextBox()
+            // Draw fields
+            apiKeyField.drawTextBox()
+            tokenField.drawTextBox()
 
-        // Draw text
-        if (tokenField.text.isEmpty() && !tokenField.isFocused)
-            Fonts.font40.drawCenteredString("§7Token", width / 2f - 82, height / 2 - 114f, 0xffffff)
-        if (apiKeyField.text.isEmpty() && !apiKeyField.isFocused)
-            Fonts.font40.drawCenteredString("§7API-Key", width / 2f - 78, height / 2 - 24f, 0xffffff)
-        Fonts.font40.drawCenteredString("§7Use coupon code 'liquidbounce' for 20% off!", width / 2f, height / 2 + 55f, 0xffffff)
+            // Draw text
+            if (tokenField.text.isEmpty() && !tokenField.isFocused)
+                Fonts.fontSemibold40.drawCenteredString("§7Token", width / 2f - 82, height / 2 - 114f, 0xffffff)
+            if (apiKeyField.text.isEmpty() && !apiKeyField.isFocused)
+                Fonts.fontSemibold40.drawCenteredString("§7API-Key", width / 2f - 78, height / 2 - 24f, 0xffffff)
+            Fonts.fontSemibold40.drawCenteredString(
+                "§7Use coupon code 'liquidbounce' for 20% off!",
+                width / 2f,
+                height / 2 + 55f,
+                0xffffff
+            )
+        }
+
         super.drawScreen(mouseX, mouseY, partialTicks)
     }
 
@@ -131,19 +141,23 @@ class GuiTheAltening(private val prevGui: GuiAltManager) : GuiScreen() {
                         status = "§cLogging in..."
 
                         // Set token as username
-                        val yggdrasilUserAuthentication = YggdrasilUserAuthentication(YggdrasilAuthenticationService(NO_PROXY, ""), MINECRAFT)
+                        val yggdrasilUserAuthentication =
+                            YggdrasilUserAuthentication(YggdrasilAuthenticationService(NO_PROXY, ""), MINECRAFT)
                         yggdrasilUserAuthentication.setUsername(account.token)
                         yggdrasilUserAuthentication.setPassword(CLIENT_NAME)
 
                         status = try {
                             yggdrasilUserAuthentication.logIn()
 
-                            mc.session = Session(yggdrasilUserAuthentication.selectedProfile.name, yggdrasilUserAuthentication
+                            mc.session = Session(
+                                yggdrasilUserAuthentication.selectedProfile.name, yggdrasilUserAuthentication
                                     .selectedProfile.id.toString(),
-                                    yggdrasilUserAuthentication.authenticatedToken, "mojang")
-                            callEvent(SessionEvent())
+                                yggdrasilUserAuthentication.authenticatedToken, "microsoft"
+                            )
+                            call(SessionUpdateEvent)
 
-                            prevGui.status = "§aYour name is now §b§l${yggdrasilUserAuthentication.selectedProfile.name}§c."
+                            prevGui.status =
+                                "§aYour name is now §b§l${yggdrasilUserAuthentication.selectedProfile.name}§c."
                             mc.displayGuiScreen(prevGui)
                             ""
                         } catch (e: AuthenticationException) {
@@ -167,11 +181,12 @@ class GuiTheAltening(private val prevGui: GuiAltManager) : GuiScreen() {
                     generateButton.enabled = true
                 }
             }
+
             2 -> {
                 loginButton.enabled = false
                 generateButton.enabled = false
 
-                Thread {
+                SharedScopes.IO.launch {
                     try {
                         status = "§cSwitching Alt Service..."
 
@@ -180,19 +195,23 @@ class GuiTheAltening(private val prevGui: GuiAltManager) : GuiScreen() {
                         status = "§cLogging in..."
 
                         // Set token as username
-                        val yggdrasilUserAuthentication = YggdrasilUserAuthentication(YggdrasilAuthenticationService(NO_PROXY, ""), MINECRAFT)
+                        val yggdrasilUserAuthentication =
+                            YggdrasilUserAuthentication(YggdrasilAuthenticationService(NO_PROXY, ""), MINECRAFT)
                         yggdrasilUserAuthentication.setUsername(tokenField.text)
                         yggdrasilUserAuthentication.setPassword(CLIENT_NAME)
 
                         status = try {
                             yggdrasilUserAuthentication.logIn()
 
-                            mc.session = Session(yggdrasilUserAuthentication.selectedProfile.name, yggdrasilUserAuthentication
+                            mc.session = Session(
+                                yggdrasilUserAuthentication.selectedProfile.name, yggdrasilUserAuthentication
                                     .selectedProfile.id.toString(),
-                                    yggdrasilUserAuthentication.authenticatedToken, "mojang")
-                            callEvent(SessionEvent())
+                                yggdrasilUserAuthentication.authenticatedToken, "microsoft"
+                            )
+                            call(SessionUpdateEvent)
 
-                            prevGui.status = "§aYour name is now §b§l${yggdrasilUserAuthentication.selectedProfile.name}§c."
+                            prevGui.status =
+                                "§aYour name is now §b§l${yggdrasilUserAuthentication.selectedProfile.name}§c."
                             mc.displayGuiScreen(prevGui)
                             "§aYour name is now §b§l${yggdrasilUserAuthentication.selectedProfile.name}§c."
                         } catch (e: AuthenticationException) {
@@ -208,8 +227,9 @@ class GuiTheAltening(private val prevGui: GuiAltManager) : GuiScreen() {
 
                     loginButton.enabled = true
                     generateButton.enabled = true
-                }.start()
+                }
             }
+
             3 -> MiscUtils.showURL("https://thealtening.com/?ref=liquidbounce")
         }
     }

@@ -5,32 +5,30 @@
  */
 package net.ccbluex.liquidbounce.features.module.modules.movement
 
-import net.ccbluex.liquidbounce.event.EventTarget
 import net.ccbluex.liquidbounce.event.MoveEvent
-import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.event.handler
 import net.ccbluex.liquidbounce.features.module.Category
-import net.ccbluex.liquidbounce.utils.block.BlockUtils.getBlock
-import net.ccbluex.liquidbounce.utils.misc.FallingPlayer
-import net.ccbluex.liquidbounce.value.BoolValue
-import net.ccbluex.liquidbounce.value.IntegerValue
+import net.ccbluex.liquidbounce.features.module.Module
+import net.ccbluex.liquidbounce.utils.block.block
+import net.ccbluex.liquidbounce.utils.movement.FallingPlayer
 import net.minecraft.block.BlockAir
 import net.minecraft.util.BlockPos
 
-object SafeWalk : Module("SafeWalk", Category.MOVEMENT, hideModule = false) {
+object SafeWalk : Module("SafeWalk", Category.MOVEMENT) {
 
-    private val airSafe by BoolValue("AirSafe", false)
-    private val maxFallDistanceValue = IntegerValue("MaxFallDistance", 5, 0..100)
+    private val airSafe by boolean("AirSafe", false)
+    private val maxFallDistanceValue = int("MaxFallDistance", 5, 0..100)
 
     private var lastGroundY: Double? = null
     private var lastCollisionY: Int? = null
 
-    @EventTarget
-    fun onMove(event: MoveEvent) {
-        val player = mc.thePlayer ?: return
+    val onMove = handler<MoveEvent> { event ->
+        val player = mc.thePlayer ?: return@handler
         if (player.capabilities.allowFlying || player.capabilities.isFlying
-            || !mc.playerController.gameIsSurvivalOrAdventure()) return
+            || !mc.playerController.gameIsSurvivalOrAdventure()
+        ) return@handler
 
-        if (!maxFallDistanceValue.isMinimal() && player.onGround && getBlock(BlockPos(player).down()) !is BlockAir) {
+        if (!maxFallDistanceValue.isMinimal() && player.onGround && BlockPos(player).down().block !is BlockAir) {
             lastGroundY = player.posY
             lastCollisionY = FallingPlayer(player, true).findCollision(60)?.pos?.y
         }
